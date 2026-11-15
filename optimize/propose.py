@@ -7,9 +7,24 @@ Chaque proposition porte des mesures, et chaque mesure son statut, décidé par 
 Rien n'est arrondi vers le plus favorable, rien ne vient du modèle.
 
 Types de modifications (une par micro-PR) :
-- ``regles``   : un LLM qui aiguille (R1) remplacé par des règles extraites, prouvé par rejeu ;
-- ``modele``   : un modèle plus petit (R2), prouvé au banc sur les mêmes entrées (clé nécessaire) ;
-- ``plafond``  : un plafond de longueur (R12), mesuré sur l'historique des réponses.
+- ``regles``       : un LLM qui aiguille (R1) remplacé par des règles extraites, prouvé par rejeu ;
+- ``modele``       : un modèle plus petit (R2), prouvé au banc sur les mêmes entrées (clé nécessaire) ;
+- ``plafond``      : un plafond de longueur (R12), mesuré sur l'historique des réponses ;
+- ``cache``        : les appels identiques en trop (R8), mis en cache plutôt que rejoués ;
+- ``erreurs``      : les relances d'un échec déjà facturé (R9), évitées en corrigeant la cause ;
+- ``cache_prompt`` : le cache de prompt du fournisseur (R4), calcul exact sur les jetons répétés ;
+- ``batch``        : l'API batch d'un fournisseur (R14), remise de scénario non vérifiée par modèle ;
+- ``raisonnement`` : un effort de raisonnement réduit (R7), prouvé au banc (clé OpenAI nécessaire).
+
+Le verdict « pass » exige une précision >= proof.replay.THRESHOLD (95 %), mesurée, jamais
+estimée (même seuil que le rejeu des règles, réutilisé plutôt que redéfini). Pour les types sans
+risque de qualité (cache, erreurs, cache_prompt : le modèle et sa réponse ne changent pas, seule
+la facturation ou le nombre d'appels change), cette précision de 100 % n'est pas une hypothèse
+mais la définition même du constat sous-jacent ; elle reste donc « mesurée », pas fabriquée.
+
+``cache``, ``erreurs``, ``cache_prompt``, ``batch`` et ``raisonnement`` vivent dans
+optimize/leviers/ (un module par levier), pour que chaque nouveau levier ne touche que son
+propre fichier ; seule leur ligne de câblage reste ici, dans propose().
 """
 import math
 from statistics import median
@@ -55,15 +70,17 @@ def _rules(finding, events, llm):
     rules = extract_rules(finding, events, llm=llm)
     proof = replay(finding, events, rules)
     group = [e for e in events if e["event_id"] in set(finding["event_ids"])]
-    # latence médiane mesurée : les règles chronométrées sur chaque vraie entrée, le modèle sinon
-    route, lat_after = build_router(rules), []
+    # latence médiane et jetons envoyés mesurés ensemble, entrée par entrée : une règle répond sans
+    # rien envoyer au modèle (0 jeton, latence chronométrée) ; un appel resté sur le secours garde ses
+    # jetons et sa latence enregistrés. Rien n'est extrapolé depuis un taux de couverture global.
+    route, lat_after, tokens_after = build_router(rules), [], 0
     for e in group:
         t0 = time.perf_counter()
         covered = route(_user_text(e)) is not None
         lat_after.append((time.perf_counter() - t0) * 1000 if covered else e["latency_ms"])
+        tokens_after += 0 if covered else (e["usage"].get("input_tokens") or 0)
     med_before = median(e["latency_ms"] for e in group) if group else None
-    # part des appels encore envoyés au modèle : ceux que les règles ne couvrent pas
-    kept = 1 - proof["rules_coverage"] if proof["n_replayed"] else None
+    med_after = median(lat_after) if lat_after else None
     tokens_before = _sent_tokens(group)
     spent = _cost(group)
     return {
@@ -75,12 +92,14 @@ def _rules(finding, events, llm):
             "precision": _m(round(proof["agreement_rate"] * 100, 1), MESURE, "%"),
             "appels_rejoues": _m(proof["n_replayed"], MESURE),
             "latence_p95": _m(_pct_change(proof["p95_before_ms"], proof["p95_after_ms"]), MESURE, "%"),
-            "latence_mediane": _m(_pct_change(med_before, median(lat_after)) if lat_after else None, MESURE, "%"),
+            "latence_mediane": _m(_pct_change(med_before, med_after), MESURE, "%"),
             "cout": _m(_pct_change(proof["cost_before_month_usd"], proof["cost_after_month_usd"]),
                        MESURE if proof["cost_after_month_usd"] is not None else NON_TESTE, "%"),
-            "jetons_envoyes": _m(_pct_change(tokens_before, tokens_before * kept if kept is not None else None),
-                                 ESTIME, "%", "les appels couverts par les règles n'envoient plus rien au modèle"),
+            "jetons_envoyes": _m(_pct_change(tokens_before, tokens_after), MESURE, "%"),
         },
+        # valeurs brutes (ms) pour l'affichage quand le pourcentage seul ressemble à un bug (ex. -100 %) :
+        # cf. scripts.tester_ui.latency_cell.
+        "latence_ms": {"avant": med_before, "apres": med_after, "statut": MESURE},
         # dépense réelle de l'historique, et ce qu'elle aurait été : base du total du message Slack
         "cout_usd": {"avant": spent, "apres": spent * (1 + _pct_change(proof["cost_before_month_usd"],
                                                                         proof["cost_after_month_usd"]) / 100)
@@ -161,8 +180,15 @@ def _cap_cost(group, cap):
     return {"avant": spent, "apres": spent - cut if spent is not None else None, "statut": MESURE}
 
 
-def propose(events, llm=None, keys_available=False, prove=None):
-    """Toutes les propositions testables, dans l'ordre des constats. ``prove`` : bench.m2.prove (injectable)."""
+def propose(events, llm=None, keys_available=False, prove=None, prove_reasoning=None):
+    """Toutes les propositions testables, dans l'ordre des constats.
+    ``prove`` : bench.m2.prove (injectable) ; ``prove_reasoning`` : bench.reasoning.prove (injectable).
+    cache/erreurs/cache_prompt/batch/raisonnement : voir optimize/leviers/ (un fichier par levier)."""
+    from optimize.leviers.batch import batch_proposal
+    from optimize.leviers.cache import cache_proposal
+    from optimize.leviers.cache_prompt import cache_prompt_proposal
+    from optimize.leviers.errors import errors_proposal
+    from optimize.leviers.reasoning import reasoning_proposal
     if prove is None:
         from bench.m2 import prove
     events = list(events)
@@ -177,4 +203,42 @@ def propose(events, llm=None, keys_available=False, prove=None):
             p = _cap(f, events)
             if p:
                 out.append(p)
+        elif f["rule"] == "duplicate_calls":
+            out.append(cache_proposal(f, events))
+        elif f["rule"] == "paid_errors":
+            p = errors_proposal(f, events)
+            if p:
+                out.append(p)
+        elif f["rule"] == "no_cache":
+            p = cache_prompt_proposal(f, events)
+            if p:
+                out.append(p)
+        elif f["rule"] == "batch_eligible":
+            out.append(batch_proposal(f, events))
+        elif f["rule"] == "excess_reasoning":
+            out.append(reasoning_proposal(f, events, keys_available, prove_reasoning))
     return out
+
+
+def sans_piste(events, proposals):
+    """Constats sans proposition testable par rejeu, un par problème (règle) et par coût décroissant :
+    [{regle, titre, nb, pourquoi, pour_tester, workflows, nb_workflows, part}]. ``workflows`` : les trois
+    plus coûteux, ``part`` : leur part du coût total (ou None). Distingue « constats mais rien de
+    rejouable » de « aucun constat »."""
+    from report.audit import build_report
+    from report.conseils import NON_REJOUABLE, NON_REJOUABLE_DEFAULT
+    from report.regroupe import groupes
+    done = {p["finding_id"] for p in proposals}
+    report = build_report(list(events))
+    total = (report["resume"]["global"] or {}).get("cout_mensuel_usd") if events else None
+    if total is None and events:
+        total = report["resume"]["global"].get("cout_observe_usd")
+    pending = [c for c in report["constats"] if c["finding_id"] not in done]
+    ids = [a["app_id"] for a in report["applications"]]
+    rows = []
+    for g in groupes(pending, total, ids):
+        why, how = NON_REJOUABLE.get(g["regle"], NON_REJOUABLE_DEFAULT)
+        rows.append({"regle": g["regle"], "titre": g["titre"], "nb": len(g["constats"]), "pourquoi": why,
+                     "pour_tester": how, "workflows": [w["nom"] for w in g["workflows"][:3]],
+                     "nb_workflows": len(g["workflows"]), "part": g["part"]})
+    return rows

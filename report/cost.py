@@ -12,6 +12,8 @@ from pathlib import Path
 from statistics import median
 
 PRICING_PATH = Path(__file__).resolve().parents[1] / 'fixtures' / 'pricing.json'
+# Surcouche Amazon Bedrock : tarifs estimés (source, date et réserves dans son bloc _meta).
+BEDROCK_PRICING_PATH = Path(__file__).resolve().parents[1] / 'fixtures' / 'pricing.bedrock.json'
 MONTH_SECONDS = 30 * 24 * 60 * 60
 # En dessous d'une journée observée, une projection sur un mois n'est pas fiable : un workflow par lots
 # (un récap par jour) passé deux fois en une heure serait projeté 38 fois trop haut (retour du 26/09).
@@ -22,18 +24,73 @@ RUN_GAP_SECONDS = 30 * 60
 _DATED = re.compile(r"(-\d{8}|-\d{4}-\d{2}-\d{2}|@\d{8}|-0\d\d)$")
 
 
+# identifiants Bedrock : ARN, préfixe de profil d'inférence (eu., us., global...), préfixe éditeur, suffixe -v1:0
+_BEDROCK_ARN = re.compile(r"^arn:aws[a-z-]*:bedrock:[^:]*:[^:]*:(?:inference-profile|foundation-model)/")
+_BEDROCK_PROFILE = re.compile(r"^(?:eu|us|us-gov|apac|jp|au|ca|global)\.")
+_BEDROCK_PUBLISHER = re.compile(r"^(?:anthropic|amazon|meta|mistral)\.")
+_BEDROCK_VERSION = re.compile(r"-v\d+(?::\d+)?$")
+
+
+def bedrock_name(model):
+    """Nom nu d'un identifiant Bedrock (claude-sonnet-4-5-20250929), identique si ce n'en est pas un."""
+    name = _BEDROCK_ARN.sub("", model)
+    name = _BEDROCK_PROFILE.sub("", name)
+    name = _BEDROCK_PUBLISHER.sub("", name)
+    return _BEDROCK_VERSION.sub("", name)
+
+
+_DOTTED = re.compile(r"(?<![\d.])(\d)-(\d)(?!\d)")  # 5-5 -> 5.5 (un seul chiffre de chaque côté)
+_DASHED = re.compile(r"(\d)\.(\d)")
+_SUFFIX_NOISE = re.compile(r"(\[[^\]]*\]|:thinking|:free|:online|:extended|:nitro|-thinking)$")
+_PREVIEW = re.compile(r"-(?:preview|exp|experimental)(?:-[\w.]+)*$")
+
+
+def _variants(name):
+    """Écritures voisines d'un même nom : tirets/points des versions, suffixes de date, -latest, aperçus."""
+    seen = []
+    pending = [name]
+    while pending:
+        cur = pending.pop(0)
+        if cur in seen or not cur:
+            continue
+        seen.append(cur)
+        pending.extend([
+            _DATED.sub("", cur), _SUFFIX_NOISE.sub("", cur), _PREVIEW.sub("", cur),
+            _DOTTED.sub(r"\1.\2", cur), _DASHED.sub(r"\1-\2", cur),
+            re.sub(r"-latest$", "", cur),
+        ])
+    return seen
+
+
 def lookup(prices, model):
-    """Prix d'un modèle tel que l'appelle le client : nom exact, sans préfixe
-    fournisseur, puis sans suffixe de date. None si inconnu."""
-    if not model:
+    """Prix d'un modèle tel que l'appelle le client : nom exact, sans préfixe fournisseur (openai/, models/,
+    anthropic/) ni identifiant Bedrock, puis variantes d'écriture (claude-sonnet-5-5 ou claude-sonnet-5.5,
+    suffixe de date, -latest, [1m], aperçu). La casse est ignorée. None si inconnu."""
+    if not model or not isinstance(model, str):
         return None
-    for name in (model, model.split("/", 1)[-1]):
-        if name in prices:
-            return prices[name]
-        base = _DATED.sub("", name)
-        if base != name and base in prices:
-            return prices[base]
+    raw = model.strip()
+    for name in (raw, raw.split("/", 1)[-1], raw.rsplit("/", 1)[-1], bedrock_name(raw)):
+        for candidate in (name, name.lower()):
+            for variant in _variants(candidate):
+                if variant in prices:
+                    return prices[variant]
     return None
+
+
+def scoped_price(price, model):
+    """Tarif Bedrock applicable : le sous-bloc « global » pour un profil global., sinon le tarif régional (racine)."""
+    name = _BEDROCK_ARN.sub("", model or "")
+    if price and name.startswith("global.") and isinstance(price.get("global"), dict):
+        return {**price, **price["global"]}
+    return price
+
+
+def _bedrock_prices():
+    """Tarifs Bedrock estimés (surcouche), ou {} si le fichier est absent."""
+    try:
+        return json.loads(BEDROCK_PRICING_PATH.read_text(encoding='utf-8')).get('models', {})
+    except (OSError, ValueError):
+        return {}
 
 
 def chiffrer(events, pricing=None):
@@ -60,6 +117,7 @@ def chiffrer(events, pricing=None):
         if '/' in model:
             prices.setdefault(model.split('/', 1)[1], price)
 
+    bedrock = _bedrock_prices()
     missing = []
     latencies = sorted(e['latency_ms'] for e in events)
     errors = sum(e['error'] is not None for e in events)
@@ -93,7 +151,10 @@ def chiffrer(events, pricing=None):
             if (field != 'cached_input_tokens' or field in usage) and usage.get(field) is None:
                 reasons.append(f'usage.{field} inconnu')
         model = e['model']
-        price = lookup(prices, model)
+        on_bedrock = 'bedrock' in (e.get('upstream') or '')
+        price = (scoped_price(lookup(bedrock, model), model) if on_bedrock else None) or lookup(prices, model)
+        written = usage.get('cache_write_input_tokens') or 0
+        written_1h = min(usage.get('cache_write_1h_input_tokens') or 0, written)
         if price is None:
             reasons.append(f'modele absent du catalogue : {model}')
         else:
@@ -101,6 +162,10 @@ def chiffrer(events, pricing=None):
             cached = usage.get('cached_input_tokens')
             if cached is not None and cached > 0:
                 fields.append('cached_in')
+            if written - written_1h > 0:
+                fields.append('cache_write_in')
+            if written_1h > 0:
+                fields.append('cache_write_1h_in')
             for field in fields:
                 rate = price.get(field)
                 if (isinstance(rate, bool) or not isinstance(rate, (int, float))
@@ -119,6 +184,10 @@ def chiffrer(events, pricing=None):
             if e['provider'] != 'anthropic':
                 input_cost -= cached * price['in']
             input_cost += cached * price['cached_in']
+        if written - written_1h > 0:
+            input_cost += (written - written_1h) * price['cache_write_in']
+        if written_1h > 0:
+            input_cost += written_1h * price['cache_write_1h_in']
         costs.append((input_cost + usage['output_tokens'] * price['out']) / 1_000_000)
     if not missing:
         result['cout_mensuel_usd'] = math.fsum(costs) * MONTH_SECONDS / duration
@@ -131,6 +200,48 @@ def runs(events):
     return sum(1 for a, b in zip(starts, starts[1:]) if (b - a).total_seconds() >= RUN_GAP_SECONDS) + bool(starts)
 
 
+def source_kind(events):
+    """D'où viennent les appels : ``logs`` (Claude Code, Codex), ``n8n`` (exécutions d'un workflow) ou
+    ``passerelle`` (trafic capturé en direct, ou source inconnue)."""
+    prefixes = {(e.get("app_id") or "").split(":", 1)[0] for e in events}
+    if prefixes & {"claude-code", "codex"}:
+        return "logs"
+    return "n8n" if "n8n" in prefixes else "passerelle"
+
+
+MORE_DATA_HINT = {
+    "logs": "analysez une période plus longue ou plus de sessions (tous vos projets : ALL=1)",
+    "n8n": "attendez davantage d'exécutions du workflow, puis relancez l'audit",
+    "passerelle": "laissez tourner la passerelle au moins une journée",
+}
+
+
+def more_data_hint(events):
+    """Le conseil « plus de données » qui convient à la source (jamais « laissez tourner la passerelle »
+    pour des journaux ou un workflow n8n)."""
+    return MORE_DATA_HINT[source_kind(events)]
+
+
+def chiffrer_partiel(events):
+    """chiffrer(), mais si des appels ne sont pas chiffrables, chiffre les autres plutôt que rien.
+    ``part_chiffree`` dit quelle part des appels réussis le chiffre couvre. Une seule vérité pour l'en-tête
+    du rapport, ses constats et la section Facturation."""
+    events = list(events)
+    c = chiffrer(events)
+    if c["cout_mensuel_usd"] is not None or not events:
+        return c
+    ids = {e["event_id"] for e in events}
+    unpriced = {m.split(": ", 1)[0] for m in c["manquants"]} & ids
+    succeeded = [e for e in events if e["error"] is None]
+    priced = [e for e in succeeded if e["event_id"] not in unpriced]
+    if not unpriced or not priced:
+        return c
+    p = chiffrer(priced)
+    if p["cout_mensuel_usd"] is None:
+        return c
+    return {**c, "cout_mensuel_usd": p["cout_mensuel_usd"], "part_chiffree": len(priced) / len(succeeded)}
+
+
 def window_seconds(events):
     """Durée observée, du premier début au dernier fin d'appel."""
     if not events:
@@ -138,3 +249,15 @@ def window_seconds(events):
     start = min(datetime.fromisoformat(e["ts_start"].replace("Z", "+00:00")) for e in events)
     end = max(datetime.fromisoformat(e["ts_end"].replace("Z", "+00:00")) for e in events)
     return (end - start).total_seconds()
+
+
+def montant_economie(monthly, events):
+    """Un gain en dollars, dit honnêtement : ``X $ par mois`` si la période observée couvre au moins une
+    journée, sinon le gain sur la période observée, sans projection (``0.0032 $ sur 36 s observées``)."""
+    if window_seconds(events) >= MIN_WINDOW_SECONDS:
+        return f"{monthly:.2f} $ par mois"
+    seconds = window_seconds(events)
+    observed = monthly * seconds / MONTH_SECONDS
+    span = ("moins d'1 s" if seconds < 1 else f"{seconds:.0f} s" if seconds < 120
+            else f"{seconds / 60:.0f} min" if seconds < 3600 else f"{seconds / 3600:.1f} h")
+    return f"{observed:.2g} $ sur la période observée ({span}, trop court pour une projection mensuelle)"

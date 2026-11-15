@@ -47,13 +47,15 @@ suivre un identifiant de requete cote client, absent du schema.
 """
 import hashlib
 import json
+import os
 from collections import defaultdict
 from datetime import datetime
 
 from report.cost import chiffrer
 from rules.no_cache import _normalize
 
-MIN_CALLS = 20
+# DW_MIN_CALLS : seuil unique, abaissable pour une démo sur peu d'exécutions (défaut inchangé : 20).
+MIN_CALLS = int(os.environ.get("DW_MIN_CALLS", "20"))
 MIN_BILLED_FAILURE_RATE = 0.05
 RETRY_WINDOW_SECONDS = 30
 MIN_RETRY_STORM = 3
@@ -129,6 +131,9 @@ def detect(events, pricing=None):
                 "billed_failures": len(billed_failures),
                 "billed_failure_rate": round(rate, 3),
                 "retries": len(pairs),
+                # relances elles-memes (pas les echecs qu'elles suivent) : ce que
+                # optimize.propose._errors retire du calcul, sans recomputer les paires.
+                "retry_event_ids": sorted({o["event_id"] for _, o in pairs}),
                 "est_retry_cost_month_usd": cost["cout_mensuel_usd"],
                 "retry_cost_missing": cost["manquants"],
                 "latency_lost_ms": latency_lost,

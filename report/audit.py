@@ -18,25 +18,16 @@ import rules
 from rules.structured_output import unwrap_all
 from catalog.recommend import recommend
 from report.billing import ABONNEMENT, billing_section, load_billing, spent_usd
-from report.cost import MIN_WINDOW_SECONDS, MONTH_SECONDS, chiffrer, runs, window_seconds
+from report.pourquoi import diagnostic, lignes, utile
+from report.conseils import conseil_logs
+from report import audit_vue
+from report.regroupe import nom_workflow, parents
+from report.fmt import ms as _ms, usd as _usd
+from report.cost import (MIN_WINDOW_SECONDS, MONTH_SECONDS, chiffrer_partiel, more_data_hint, runs,
+                         source_kind, window_seconds)
 
 # En dessous d'une heure de trafic, projeter sur un mois multiplie du bruit :
 # 36 appels en 0,3 s donnaient 315 220 $/mois. On affiche alors le coût réellement dépensé.
-
-
-def _partial(events, c):
-    """Si des appels ne sont pas chiffrables, chiffre les autres plutôt que rien.
-    ``part_chiffree`` dit quelle part des appels réussis le chiffre couvre."""
-    ids = {e["event_id"] for e in events}
-    unpriced = {m.split(": ", 1)[0] for m in c["manquants"]} & ids
-    succeeded = [e for e in events if e["error"] is None]
-    priced = [e for e in succeeded if e["event_id"] not in unpriced]
-    if not unpriced or not priced:
-        return c
-    p = chiffrer(priced)
-    if p["cout_mensuel_usd"] is None:
-        return c
-    return {**c, "cout_mensuel_usd": p["cout_mensuel_usd"], "part_chiffree": len(priced) / len(succeeded)}
 
 
 def _figures(events, window=None):
@@ -44,9 +35,7 @@ def _figures(events, window=None):
     pour chaque constat (sinon une application active une heure sur sept jours serait projetée comme si
     elle tournait sans arrêt, et la somme des constats dépasserait le total). Sous une journée observée :
     coût réellement dépensé et coût par passage, jamais de projection mensuelle."""
-    c = chiffrer(events)
-    if c["cout_mensuel_usd"] is None and events:
-        c = _partial(events, c)
+    c = chiffrer_partiel(events)
     if c["cout_mensuel_usd"] is None:
         return c
     own = window_seconds(events)
@@ -57,9 +46,12 @@ def _figures(events, window=None):
     n = runs(events)
     # pas de « : » dans la raison, _missing_reasons coupe dessus
     reason = (f"moins d'une journée de trafic observée ({_duration(ref)}, {n} passage{'s' if n > 1 else ''}), "
-              "projection sur un mois non fiable, laissez tourner la passerelle au moins une journée")
+              f"projection sur un mois non fiable, {more_data_hint(events)}")
     return {**c, "cout_mensuel_usd": None, "cout_observe_usd": observed, "passages": n,
             "cout_par_passage_usd": observed / n if n else None, "manquants": [*c["manquants"], reason]}
+
+
+SHARED_REASON = "moins d'une journée de trafic observée"
 
 
 def _duration(seconds):
@@ -132,7 +124,11 @@ def _check_title(module_name):
 
 def _missing_reasons(manquants):
     """Raisons dedupliquees, sans l'identifiant d'evenement."""
-    return sorted({m.split(": ", 1)[-1] for m in manquants})
+    def reason(m):
+        head, sep, tail = m.partition(": ")
+        # Seul un identifiant d'évènement (sans espace) est retiré : une raison peut contenir « : ».
+        return tail if sep and head and " " not in head else m
+    return sorted({reason(m) for m in manquants})
 
 
 def load_banc(directory):
@@ -162,12 +158,15 @@ def build_report(events, detectors=None, banc=None, billing=None, propositions=N
     findings = [f for f in findings if f["rule"] != "data_outside_eu"]
     souverainete.sort(key=lambda f: -f["evidence"]["calls"])
 
+    kind = source_kind(events)
     period = window_seconds(events)  # une seule période d'observation pour tout le rapport
     constats = []
     for f in findings:
         evts = [by_id[i] for i in f["event_ids"] if i in by_id]
         chiffres = _figures(evts, period)
         titre, action = RULE_TEXT.get(f["rule"], DEFAULT_TEXT)
+        if kind == "logs" and conseil_logs(f["rule"]):  # Claude Code : actions faisables dans Claude Code
+            action = conseil_logs(f["rule"]).removeprefix("Quoi changer : ")
         # M2 : alternatives hors famille, seulement là où R2 a jugé la tâche simple
         alternatives = recommend(evts)["options"] if f["rule"] == "oversized_model" and evts else None
         tested = ((banc or {}).get(f["finding_id"]) or {}).get("options", {})
@@ -176,6 +175,7 @@ def build_report(events, detectors=None, banc=None, billing=None, propositions=N
                                 else o) for k, o in alternatives.items()}
         constats.append({
             "finding_id": f["finding_id"], "app_id": f["app_id"], "model": f["model"], "titre": titre, "phrase": f["title"],
+            "regle": f["rule"], "evidence": f.get("evidence"),
             "action": action, "prouve": f.get("proven", False), "gravite": f.get("severity"),
             "chiffres": chiffres, "raisons_manquantes": _missing_reasons(chiffres["manquants"]),
             "alternatives": alternatives,
@@ -184,8 +184,9 @@ def build_report(events, detectors=None, banc=None, billing=None, propositions=N
 
     flagged = {c["app_id"] for c in constats}
     apps = sorted({e["app_id"] for e in events})
-    clean = [{"app_id": a, "chiffres": _figures([e for e in events if e["app_id"] == a], period)}
-             for a in apps if a not in flagged]
+    applications = [{"app_id": a, "chiffres": _figures([e for e in events if e["app_id"] == a], period)}
+                    for a in apps]
+    clean = [a for a in applications if a["app_id"] not in flagged]
 
     starts = sorted(e["ts_start"] for e in events)
     global_figures = _figures(events, period) if events else None
@@ -194,11 +195,15 @@ def build_report(events, detectors=None, banc=None, billing=None, propositions=N
         "raisons_globales": _missing_reasons(global_figures["manquants"]) if global_figures else [],
         "resume": {"nb_appels": len(events), "nb_applications": len(apps),
                    "debut": starts[0] if starts else None, "fin": starts[-1] if starts else None,
-                   "global": global_figures},
+                   "global": global_figures, "duree_s": period},
         "constats": constats,
         "rien_a_signaler": clean,
+        "applications": applications,
+        "diagnostic": diagnostic(events) if events else None,
         "souverainete": souverainete,
         "billing": section,
+        "pourquoi_rien": ({"pourquoi": lignes(diagnostic(events)), "utile": utile(diagnostic(events))}
+                          if events and not constats else None),
         "gains_par_tache": _task_gains(propositions, events) if propositions else [],
         "gains_equivalent_api": bool(section and section["tout_abonnement"]),
     }
@@ -228,8 +233,14 @@ def _task_gains(propositions, events):
         if (cout and cout.get("statut") == "mesuré" and total_spent
                 and cout.get("avant") is not None and cout.get("apres") is not None):
             part_pct = round((cout["avant"] - cout["apres"]) / total_spent * 100)
+        lat = p.get("latence_ms") or {}
+        prec = mesures.get("precision") or {}
         rows.append({"app_id": p.get("app_id"), "changement": p.get("changement"),
-                     "figures": figures, "part_pct": part_pct})
+                     "figures": figures, "part_pct": part_pct,
+                     "cout": {"avant": (cout or {}).get("avant"), "apres": (cout or {}).get("apres"),
+                              "mesure": (cout or {}).get("statut") == "mesuré"},
+                     "latence": {"avant": lat.get("avant"), "apres": lat.get("apres")},
+                     "precision": prec.get("valeur")})
     return rows
 
 
@@ -248,19 +259,6 @@ def _cost_label(n, monthly="Coût mensuel"):
     if n.get("cout_par_passage_usd") is not None and n.get("passages", 0) > 1:
         label += f" ({n['passages']} passages, {_usd(n['cout_par_passage_usd'])} par passage)"
     return label, value
-
-
-def _usd(v):
-    if v is None:
-        return "non disponible"
-    if v >= 10:
-        return f"{v:,.0f} $".replace(",", " ")
-    # sous un centime, « 0.00 $ » cacherait l'ordre de grandeur : deux chiffres significatifs
-    return f"{v:.2f} $" if v >= 0.01 or v == 0 else f"{v:.2g} $"
-
-
-def _ms(v):
-    return "non disponible" if v is None else f"{v / 1000:.1f} s" if v >= 1000 else f"{v:.0f} ms"
 
 
 def _day(ts):
@@ -285,7 +283,7 @@ h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
 th{color:var(--mute);font-weight:500}.clean td:first-child{color:var(--ok)}
 @media print{main{padding:0}.card{break-inside:avoid}}
-"""
+""" + audit_vue.CSS
 
 
 ALT_LABELS = {"moins_cher": "moins cher", "meilleur_compromis": "même éditeur", "souverain": "souverain"}
@@ -337,10 +335,12 @@ def _bench_verdict(b):
 
 
 def _sovereignty(findings):
-    """Levier 16 : où partent les données, et les pistes européennes."""
+    """Levier 16 : où partent les données, et les pistes européennes. Une ligne par workflow et destination
+    (les appels s'additionnent) ; des pistes identiques partout ne sont dites qu'une fois."""
     if not findings:
         return ""
-    e, rows = html.escape, []
+    e, agg = html.escape, {}
+    names = parents([f["app_id"] for f in findings])
     for f in findings:
         ev = f["evidence"]
         status = "hors UE" if ev["traitement_ue"] is False else "UE non garantie"
@@ -353,18 +353,33 @@ def _sovereignty(findings):
         alt = ev["alternative_europeenne"]
         pistes.append(f"européen : {alt['modele']} via {alt['hebergeur']} ({_usd(alt['cout_mensuel_usd'])} par mois)"
                       if alt else "européen : à choisir au banc")
-        rows.append(f"<tr><td>{e(f['app_id'])}</td><td>{e(f['model'])}</td><td>{e(where)}</td>"
-                    f"<td>{e(status)}</td><td>{ev['calls']}</td><td>{e(' ; '.join(pistes))}</td></tr>")
+        key = (names[f["app_id"]], f["model"], where, status, " ; ".join(pistes))
+        agg[key] = agg.get(key, 0) + ev["calls"]
+    rows = sorted(agg.items(), key=lambda kv: -kv[1])
+    same = len({k[4] for k, _ in rows}) == 1
+    line = lambda k, n: (f"<tr><td>{e(k[0])}</td><td>{e(k[1])}</td><td>{e(k[2])}</td><td>{e(k[3])}</td>"  # noqa: E731
+                         f"<td class=\"n\">{n}</td>" + ("" if same else f"<td>{e(k[4])}</td>") + "</tr>")
+    head = ("<tr><th>Workflow</th><th>Modèle</th><th>Destination</th><th>Traitement</th><th class=\"n\">Appels</th>"
+            + ("" if same else "<th>Pistes</th>") + "</tr>")
+    rest = rows[5:]
+    more = (f"<details><summary>{len(rest)} autre{'s' if len(rest) > 1 else ''} ligne{'s' if len(rest) > 1 else ''}"
+            f"</summary><table>{head}{''.join(line(k, n) for k, n in rest)}</table></details>" if rest else "")
     deduced = any(f["evidence"]["certitude"] == "deduite" for f in findings)
+    shared = f'<p class="todo"><b>Pistes :</b> {e(rows[0][0][4])}.</p>' if same else ""
     return f"""<h2>Où partent vos données</h2>
 <p class="note">Appels traités hors d'Europe, ou sans garantie de l'être en Europe, et les pistes pour y rester.
 Aucune piste n'est prouvée : un modèle européen se teste au banc avant de changer.</p>
-<table><tr><th>Application</th><th>Modèle</th><th>Destination</th><th>Traitement</th><th>Appels</th><th>Pistes</th></tr>
-{"".join(rows)}</table>
+<table>{head}{"".join(line(k, n) for k, n in rows[:5])}</table>{more}{shared}
 {'<p class="note">* Destination déduite du format d’appel : le trafic n’est pas passé par la passerelle.</p>' if deduced else ''}"""
 
 
-def _card(c):
+def _alt_block(c):
+    """Autres modèles d'un constat, repliés sous la carte du problème."""
+    return (f"<details><summary>Autres modèles possibles pour {html.escape(nom_workflow(c['app_id']))}"
+            f"</summary>{_alternatives(c.get('alternatives'))}</details>")
+
+
+def _card(c, global_reasons=()):
     n, e = c["chiffres"], html.escape
     notes = []
     proof = c.get("preuve_agent")
@@ -374,8 +389,12 @@ def _card(c):
                      + (f" ({how})." if how else "."))
     elif not c["prouve"]:
         notes.append("Constat statistique, pas encore vérifié par rejeu.")
-    if c["raisons_manquantes"]:
-        notes.append("Chiffre manquant : " + "; ".join(c["raisons_manquantes"]) + ".")
+    # la note globale dit déjà les raisons communes, dont la durée trop courte (ses chiffres varient par constat) :
+    # sous un constat, seulement ce qui lui est propre (ex. un modèle absent du catalogue)
+    own = [r for r in c["raisons_manquantes"]
+           if r not in global_reasons and not r.startswith(SHARED_REASON)]
+    if own:
+        notes.append("Chiffre manquant : " + "; ".join(own) + ".")
     return f"""<div class="card"><h3>{e(c['titre'])}</h3>
 <div class="app">Application {e(c['app_id'])} · modèle {e(c['model'])}</div>
 <p>{e(c['phrase'])}</p>
@@ -444,8 +463,10 @@ def _billing_html(billing):
         parts = [f"<h3>{e(o['outil'])} — {e(mode)}</h3><p class=\"note\">Mode de facturation{source}.</p>"]
         if o["mode"] == ABONNEMENT:
             valeur = o.get("valeur_equivalente_usd")
+            partiel = (f" (partiel, {round(o['part_chiffree'] * 100)} % des appels)"
+                       if o.get("part_chiffree") is not None else "")
             parts.append(f'<p><b>Valeur consommée en équivalent API</b> (le forfait est un abonnement, ce montant '
-                         f"n'est pas payé à l'usage) : {_usd(valeur)} sur la période observée.</p>")
+                         f"n'est pas payé à l'usage) : {_usd(valeur)}{partiel} sur la période observée.</p>")
             p5, p7 = o.get("pic_5h") or {}, o.get("pic_semaine") or {}
             parts.append(f"<p>Pic mesuré : {p5.get('nb_appels', 0)} appel(s) sur la fenêtre glissante de 5 heures "
                          f"la plus chargée ; {p7.get('nb_appels', 0)} appel(s) sur la semaine glissante la plus "
@@ -479,8 +500,18 @@ def _gains_html(rows, equivalent_api=False):
 <p class="note">Mesuré = rejeu des mêmes entrées sur l'historique du client (python -m optimize) ; ~ = estimé,
 jamais additionné à un autre pourcentage. La part {total} compare des dollars sur la même
 période, jamais des pourcentages de périmètres différents.</p>
-<table><tr><th>Tâche</th><th>Changement</th><th>Pour cette tâche</th><th>Part {total}</th></tr>
-{"".join(body)}</table>"""
+{audit_vue.gains_barres(rows)}
+<details open><summary>Détail chiffré</summary><table><tr><th>Tâche</th><th>Changement</th><th>Pour cette tâche</th><th>Part {total}</th></tr>
+{"".join(body)}</table></details>"""
+
+
+def _pourquoi_html(block):
+    """Zéro constat : pourquoi, et ce que la source montre déjà."""
+    if not block:
+        return ""
+    li = lambda items: "".join(f"<li>{html.escape(x).replace('`', '')}</li>" for x in items)  # noqa: E731
+    useful = f"<h2>Ce que montre déjà cette source</h2><ul>{li(block['utile'])}</ul>" if block["utile"] else ""
+    return f"<h2>Pourquoi aucun constat ?</h2><ul>{li(block['pourquoi'])}</ul>{useful}"
 
 
 def render_html(report):
@@ -492,38 +523,55 @@ def render_html(report):
         partial = g.get("part_chiffree") is not None or g.get("cout_observe_usd") is not None
         missing = (f'<p class="note">{"Coût à lire avec prudence" if partial else "Coût total non disponible"} : '
                    f'{e("; ".join(report["raisons_globales"]))}.</p>' if report["raisons_globales"] else "")
-        checks = e(", ".join(report["verifications"])) or "aucune"
-        cards = "".join(_card(c) for c in report["constats"]) or "<p>Aucun gaspillage détecté.</p>"
+        v = audit_vue.vue(report)
+        cards = "".join(audit_vue.groupe_html(g, _alt_block, report["raisons_globales"], SHARED_REASON)
+                        for g in v["groupes"]) or "<p>Aucun gaspillage détecté.</p>"
+        many = len(v["workflows"]) >= 3
         rows = "".join(
             f"<tr><td>{e(a['app_id'])}</td><td>{a['chiffres']['nb_appels']}</td>"
             f"<td>{_usd(_cost(a['chiffres']))}</td></tr>" for a in report["rien_a_signaler"])
+        quiet = (f"""<h2>Rien à signaler</h2>
+<p class="note">Ces applications ne déclenchent aucune des vérifications.</p>
+<table class="clean"><tr><th>Application</th><th>Appels</th><th>{"Coût observé" if g.get("cout_observe_usd") is not None else "Coût mensuel"}</th></tr>{rows}</table>"""
+                 if rows and not many else "")
         billing = report.get("billing")
+        equiv = bool(report.get("gains_equivalent_api"))
         kpi_label, kpi_value = _cost_label(g, "Coût mensuel total")
-        if report.get("gains_equivalent_api"):  # abonnement : ce dollar n'est pas facturé à l'usage
+        if equiv:  # abonnement : ce dollar n'est pas facturé à l'usage
             kpi_label = kpi_label.replace("Coût mensuel total", "Valeur consommée (équiv. API), par mois") \
                 .replace("Coût observé", "Valeur consommée (équiv. API)")
         else:
             kpi_label = kpi_label.replace("Coût observé", "Coût observé total")
-        body = f"""<div class="kpis">
-<div class="kpi"><b>{r['nb_appels']}</b><span>appels observés</span></div>
-<div class="kpi"><b>{r['nb_applications']}</b><span>applications</span></div>
-<div class="kpi"><b>{_usd(kpi_value)}</b><span>{kpi_label.lower()}</span></div>
-<div class="kpi"><b>{len(report['constats'])}</b><span>constats</span></div></div>
+        diag = report.get("diagnostic") or {}
+        peak = next((o["pic_5h"]["nb_appels"] for o in (billing or {}).get("outils", []) if o.get("pic_5h")), None)
+        tiles = [(r["nb_appels"], "appels observés"), (r["nb_applications"], "applications"),
+                 (_usd(kpi_value), kpi_label.lower()), (f"{_day(r['debut'])} → {_day(r['fin'])}", "période observée")]
+        if diag.get("part_contexte_pct") is not None:
+            tiles.append((f"{diag['part_contexte_pct']} %", "du coût sert à relire le contexte"))
+        if peak:
+            tiles.append((peak, "appels au pic, fenêtre de 5 h"))
+        kpis = "".join(f'<div class="kpi"><b>{b}</b><span>{e(lab)}</span></div>' for b, lab in tiles)
+        heading = ("" if report.get("pourquoi_rien") else audit_vue.actions_html(v["actions"], equiv, (r.get("duree_s") or 0) >= MIN_WINDOW_SECONDS))
+        body = f"""{heading}<div class="kpis">{kpis}</div>
 {missing}
-<p class="note">Vérifications effectuées : {checks}.</p>
 {_billing_html(billing)}
 {_agent_section(report.get("agent"))}
-<h2>Constats, du plus coûteux au moins coûteux</h2>{cards}
+{_pourquoi_html(report.get("pourquoi_rien")) or f"<h2>Constats, du plus coûteux au moins coûteux</h2><p class='note'>Un même appel peut compter dans plusieurs problèmes : les parts ne s'additionnent pas.</p>{cards}"}
+{audit_vue.workflows_html(v["workflows"]) if report["constats"] else ""}
 {_gains_html(report.get("gains_par_tache"), report.get("gains_equivalent_api", False))}
 {_sovereignty(report.get("souverainete"))}
-<h2>Rien à signaler</h2>
-<p class="note">Ces applications ne déclenchent aucune des vérifications ci-dessus.</p>
-<table class="clean"><tr><th>Application</th><th>Appels</th><th>Coût mensuel</th></tr>{rows}</table>"""
+{audit_vue.sans_resultat_html(report)}
+<details><summary>Vérifications effectuées ({len(report['verifications'])})</summary><ul class="note">{"".join(f"<li>{e(x)}</li>" for x in report['verifications']) or "<li>aucune</li>"}</ul></details>
+{quiet}"""
+    g = r["global"] or {}
+    sub = ("Coûts en dollars, à partir des prix publics des modèles ; trafic observé sur moins d'une journée, "
+           "donc aucune projection mensuelle." if g.get("cout_observe_usd") is not None else
+           "Coûts projetés sur 30 jours au volume observé, en dollars, à partir des prix publics des modèles.")
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Audit Deadweight</title><style>{CSS}</style></head><body><main>
 <h1>Audit des appels d'IA</h1>
-<p class="sub">Période observée : du {_day(r['debut'])} au {_day(r['fin'])}. Coûts projetés sur 30 jours au volume observé, en dollars, à partir des prix publics des modèles.</p>
+<p class="sub">Période observée : du {_day(r['debut'])} au {_day(r['fin'])}. {sub}</p>
 {body}
 <p class="note">Aucune donnée n'a quitté votre infrastructure pour produire ce rapport.</p>
 </main></body></html>

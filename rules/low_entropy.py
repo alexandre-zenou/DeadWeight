@@ -22,11 +22,13 @@ Pas de faux positif sur un vrai travail : un outil appele avec des arguments ric
 import hashlib
 import json
 import math
+import os
 import re
 from collections import Counter, defaultdict
 
 # Seuils repris tels quels du prototype (verdicts identiques au hackathon).
-MIN_CALLS = 30      # en dessous, la distribution n'est pas significative
+# DW_MIN_CALLS : seuil unique, abaissable pour une demo sur peu d'executions (defaut inchange : 30).
+MIN_CALLS = int(os.environ.get("DW_MIN_CALLS", "30"))      # en dessous, la distribution n'est pas significative
 MAX_DISTINCT = 8    # au-dela, on considere que le modele produit de l'information
 CUT_DISTINCT = 4    # <= 4 sorties : remplacable par des regles (cut), sinon trim
 MAX_SAMPLES_PER_OUTPUT = 12
@@ -42,6 +44,7 @@ def normalize(text):
 
 
 _FENCE = re.compile(r"^```[a-z]*\s*|\s*```$", re.I)
+_BARE_TAG = re.compile(r"^json\s+(?=\{)", re.I)  # « json {…} » : étiquette de langue sans les ```
 _SCORE_KEYS = re.compile(r"(^|[._])(confidence|score|probability|proba|certainty|likelihood)$", re.I)
 
 
@@ -63,7 +66,7 @@ def _fields(value):
 
 
 def _json_object(text):
-    stripped = _FENCE.sub("", str(text).strip())
+    stripped = _BARE_TAG.sub("", _FENCE.sub("", str(text).strip()))
     if not stripped.startswith("{"):
         return None
     try:
@@ -164,7 +167,7 @@ def _finding(app_id, model, template, evts, outputs, raw):
         "model": model,
         "template": template,
         "severity": "cut" if cut else "trim",
-        "title": (f"{n} appels à {model} ne produisent que {len(dist)} réponses différentes : "
+        "title": (f"{n} appels à {model} ne produisent que {len(dist)} réponse{'s' if len(dist) > 1 else ''} différente{'s' if len(dist) > 1 else ''} : "
                   f"c'est un aiguillage, pas du raisonnement{how.get(kind, '')}"),
         "proven": False,
         "event_ids": [e["event_id"] for e in evts],

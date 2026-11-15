@@ -7,11 +7,12 @@ La preuve releve du rejeu (D3.2).
 """
 import copy
 import json
+import os
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
 
-from report.cost import chiffrer, lookup
+from report.cost import chiffrer, lookup, montant_economie
 from rules.low_entropy import normalize, template_of
 
 PRICING_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "pricing.json"
@@ -23,7 +24,8 @@ MAX_MEDIAN_OUTPUT_TOKENS = 50
 # Au-dela de 2 000 tokens d'entree, la tache peut exiger une vraie lecture de contexte.
 MAX_MEDIAN_INPUT_TOKENS = 2000
 # Meme minimum que la regle 1 : en dessous, la mediane n'est pas representative.
-MIN_CALLS = 30
+# DW_MIN_CALLS : seuil unique, abaissable pour une demo sur peu d'executions (defaut inchange : 30).
+MIN_CALLS = int(os.environ.get("DW_MIN_CALLS", "30"))
 
 # Repli quand le prix est inconnu : on se fie au nom, et l'evidence le dit.
 PREMIUM_MARKERS = ("opus", "sonnet", "-pro", "gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3")
@@ -103,7 +105,7 @@ def detect(events, pricing=None):
         suggested = suggest_model(provider, model, pricing)
         saving, missing = _saving(ok, suggested, pricing) if suggested else (None, ["aucun modele plus petit connu"])
         distinct = len({normalize(e["response"].get("content") or "") for e in ok})
-        saving_txt = (f" Économie estimée : {saving:.2f} $ par mois, non démontrée tant qu'elle n'est pas vérifiée par rejeu."
+        saving_txt = (f" Économie estimée : {montant_economie(saving, ok)}, non démontrée tant qu'elle n'est pas vérifiée par rejeu."
                       if saving is not None else " Économie non chiffrable (prix inconnu) et non démontrée.")
         findings.append({
             "finding_id": f"f_{app}_{template}_oversized",

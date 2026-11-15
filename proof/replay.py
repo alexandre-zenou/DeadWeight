@@ -19,6 +19,7 @@ non contournable) et intervalle minimal entre deux appels.
     python3 -m proof.replay fixtures/dataset/v1/events.jsonl
 """
 import argparse
+from collections import Counter
 import hashlib
 import json
 import math
@@ -33,7 +34,10 @@ from report.cost import PRICING_PATH, chiffrer, lookup
 from rules.low_entropy import canon, detect, output_of
 
 THRESHOLD = 0.95
-MIN_REPLAY = 30           # entrées remplacées ; comme MIN_CALLS de R1, en dessous le taux ne veut rien dire
+# entrées remplacées ; comme MIN_CALLS de R1, en dessous le taux ne veut rien dire. DW_MIN_CALLS : même
+# variable que les règles de fréquence (cf. rules.oversized_model), abaissée pour une démo sur peu
+# d'exécutions ; défaut inchangé (30) sans la variable.
+MIN_REPLAY = int(os.environ.get("DW_MIN_CALLS", "30"))
 HARD_MAX_CALLS = 200      # plafond absolu d'appels au modèle de secours, par rejeu
 DEFAULT_MAX_CALLS = 50
 DEFAULT_MIN_INTERVAL_S = 1.0
@@ -109,6 +113,18 @@ def _tokens_cost(prices, model, tin, tout):
     return (tin * price['in'] + tout * price['out']) / 1_000_000
 
 
+def _missing_calls(replaced, n):
+    """Phrase « non conclu » : ce n'est pas un échec des règles, il manque du volume, et combien."""
+    base = ("NON CONCLU, échantillon trop petit (pas un échec des règles) : les exemples servant à écrire "
+            "les règles sont exclus du rejeu, il faut donc plus d'appels que ce minimum.")
+    missing = MIN_REPLAY - replaced
+    if not replaced or not n:
+        return base + f" Il manque {missing} entrée(s) remplacée(s) ; volume à prévoir non estimable (aucune règle ne couvre encore d'entrée)."
+    more = math.ceil(missing * n / replaced)
+    return base + (f" Il manque {missing} entrée(s) remplacée(s) : compter environ {more} appel(s) "
+                   "de plus de ce gabarit, au rythme de couverture observé.")
+
+
 def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=None,
            threshold=THRESHOLD, prices=None):
     """Rend un dict au format schemas/proof.schema.json (+ champs explicatifs).
@@ -137,6 +153,7 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
     agree = matched = sent = capped = 0
     capped_ids = set()
     lat_after, fb_in, fb_out, fb_ok = [], 0, 0, True
+    seen, right = Counter(), Counter()  # réponses attendues vérifiées, et retrouvées, par réponse
     for e, text, expected in pairs:
         t0 = time.perf_counter()
         got, via = route(text), 'regles'
@@ -165,8 +182,10 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         lat_after.append((time.perf_counter() - t0) * 1000 + extra_ms)
         if via == 'non couvert':
             continue  # appel d'origine inchangé : rien à comparer
+        seen[expected] += 1
         if got == expected:
             agree += 1
+            right[expected] += 1
         elif len(disagreements) < MAX_DISAGREEMENTS:
             disagreements.append({'event_id': e['event_id'], 'input': text[:120],
                                   'expected': expected, 'got': got, 'via': via})
@@ -175,11 +194,20 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
     rate = agree / replaced if replaced else 0.0
     if replaced < MIN_REPLAY:
         reasons.append(f'{replaced} entrée(s) remplacée(s) sur {n} rejouée(s), '
-                       f'il en faut au moins {MIN_REPLAY} pour conclure')
+                       f'il en faut au moins {MIN_REPLAY} pour conclure. {_missing_calls(replaced, n)}')
     if rate < threshold:
         reasons.append(f'accord {rate:.1%} sous le seuil de {threshold:.0%}')
     if not keys:
         reasons.append("aucune règle extraite : rien à rejouer")
+    if len(keys) > 1 and replaced:
+        # une règle qui répond toujours la même chose ne prouve rien : le jeu de test doit contenir
+        # plusieurs réponses, et chacune doit être retrouvée au moins une fois
+        if len(seen) < 2:
+            reasons.append(f"le jeu de test ne contient qu'une seule réponse ({next(iter(seen))}) : "
+                           "une règle constante aurait le même score, rien n'est prouvé")
+        else:
+            reasons += [f"la réponse « {k} » n'est jamais retrouvée par les règles ({seen[k]} cas)"
+                        for k in sorted(seen) if not right[k]]
 
     costs = chiffrer(group)
     before = costs['cout_mensuel_usd']

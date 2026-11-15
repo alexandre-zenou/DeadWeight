@@ -7,7 +7,7 @@ import pytest
 
 from optimize.patch import make_patch, pr_text
 from optimize.propose import MESURE, propose
-from optimize.slack import message
+from optimize.slack import LEGEND, message
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = [json.loads(line) for line in (ROOT / "fixtures/dataset/v1/events.jsonl").read_text().splitlines()
@@ -25,8 +25,15 @@ def test_proven_rules_are_measured_on_the_history(proposals):
     m = triage["mesures"]
     assert m["precision"] == {"valeur": 100.0, "statut": MESURE, "unite": "%"}
     assert m["latence_mediane"]["statut"] == MESURE and m["latence_mediane"]["valeur"] < -90
-    assert m["cout"]["valeur"] < 0 and m["jetons_envoyes"]["statut"] == "estimé" and "hypothese" in m["jetons_envoyes"]
+    assert m["cout"]["valeur"] < 0
+    # jetons envoyés : mesurés au rejeu (0 jeton pour les entrées couvertes par une règle), plus
+    # d'estimation par taux de couverture (D : plus de « ~ » sur cette figure).
+    assert m["jetons_envoyes"]["statut"] == MESURE and "hypothese" not in m["jetons_envoyes"]
+    assert m["jetons_envoyes"]["valeur"] < 0
     assert triage["cout_usd"]["apres"] < triage["cout_usd"]["avant"]
+    # latence brute (ms) : pour l'affichage quand le pourcentage seul ressemble à un bug (-100 %)
+    assert triage["latence_ms"]["avant"] > triage["latence_ms"]["apres"] >= 0
+    assert triage["latence_ms"]["statut"] == MESURE
 
 
 def test_without_a_key_a_model_swap_is_not_tested_never_guessed(proposals):
@@ -34,13 +41,26 @@ def test_without_a_key_a_model_swap_is_not_tested_never_guessed(proposals):
     assert swaps and all(p["verdict"] == "non_teste" and p["mesures"]["precision"]["valeur"] is None for p in swaps)
 
 
+def test_slack_shows_raw_ms_for_minus_100_percent_latency(proposals):
+    """Même bascule que le tableau du testeur (scripts.tester_ui.latency_cell) : « X ms → Y ms »
+    plutôt qu'un « -100 % » qui ressemble à un bug."""
+    triage = next(p for p in proposals if p["type"] == "regles" and p["app_id"] == "mail-triage")
+    assert triage["mesures"]["latence_mediane"]["valeur"] == -100.0
+    text = message(proposals, total_spent=1.0)
+    assert "latence médiane -100%" not in text.replace(" ", "")
+    ms = triage["latence_ms"]
+    assert f"{ms['avant']:.0f} ms → {ms['apres']:.0f} ms" in text
+
+
 def test_slack_totals_only_proven_measured_gains(proposals):
     text = message(proposals, total_spent=1.0)
-    assert "1 optimisation prouvée sur" in text and "100 % minimum" in text
+    n_pass = sum(p["verdict"] == "pass" for p in proposals)
+    assert f"{n_pass} optimisation" in text and "100 % minimum" in text
     assert "précision +" not in text                      # un niveau, pas une variation
     assert "~" in text                                    # les estimations restent marquées
-    assert text.count("✅") == sum(p["verdict"] == "pass" for p in proposals)
-    assert "⛔" not in text and "◻️" not in text and "page développeur" in text  # un décideur ne voit que les gains
+    body = text.replace(LEGEND, "")  # la légende cite les trois icônes ; le corps ne montre que les gains
+    assert body.count("✅") == sum(p["verdict"] == "pass" for p in proposals)
+    assert "⛔" not in body and "◻️" not in body and "page développeur" in text  # un décideur ne voit que les gains
 
 
 def test_slack_line_states_the_per_task_gain_in_order_and_its_share_of_total(proposals):
@@ -48,7 +68,9 @@ def test_slack_line_states_the_per_task_gain_in_order_and_its_share_of_total(pro
     total = triage["cout_usd"]["avant"]  # dépense totale = celle de cette seule tâche ici : part = 100 %
     text = message(proposals, total_spent=total)
     lines = text.splitlines()
-    i = next(i for i, line_ in enumerate(lines) if "mail-triage" in line_)
+    # "mail-triage" a aussi une proposition "cache" (R8) désormais : la ligne cherchée se distingue
+    # par le début de son texte, propre à _rules (optimize.propose).
+    i = next(i for i, line_ in enumerate(lines) if "mail-triage" in line_ and "Remplacer les appels" in line_)
     detail = lines[i + 1]
     assert "Pour cette tâche : contexte envoyé" in detail
     # ordre imposé : contexte envoyé, coût, latence médiane, précision
@@ -106,3 +128,36 @@ def test_model_and_cap_patches(tmp_path):
     cap = {"type": "plafond", "app_id": "mail-triage", "plafond": 300}
     diff, _ = make_patch(repo, cap)
     assert "chat.completions.create(max_tokens=300, model=" in diff
+
+
+def test_slack_latence_mediane_a_moins_100_affichee_en_millisecondes():
+    from optimize.slack import _line
+    p = {"verdict": "pass", "app_id": "mail-triage", "changement": "Règles.", "raisons": [],
+         "mesures": {"latence_mediane": {"valeur": -100.0, "statut": "mesuré", "unite": "%"}},
+         "latence_ms": {"avant": 633.2, "apres": 0.004, "statut": "mesuré"}}
+    line = _line(p, None)
+    assert "latence médiane 633 ms → 0 ms" in line
+    assert "-100" not in line
+
+
+def test_slack_legend_first_and_no_pr_promise_without_diff(proposals):
+    lines = message(proposals, total_spent=1.0).splitlines()
+    assert lines[1] == LEGEND
+    text = "\n".join(lines)
+    assert "acceptant sa micro-PR" not in text and "--repo <dossier>" in text
+    assert "diff et le texte" in message(proposals, total_spent=1.0, with_diffs=True)
+    assert "acceptant sa micro-PR" in message(proposals, {proposals[0]["finding_id"] + proposals[0]["type"]: "u"})
+
+
+def test_slack_unproven_collapsed_in_one_line_even_in_demo(proposals):
+    text = message(proposals, total_spent=1.0, show_all=True)
+    assert text.count("⛔ *") == 0 and text.count("◻️ *") == 0 and "autres pistes" in text
+
+
+def test_slack_quoi_changer_for_changes_without_diff():
+    from optimize.slack import quoi_changer
+    assert "max_tokens=120" in quoi_changer({"type": "plafond", "plafond": 120, "model": "gpt-4o"})
+    assert 'reasoning_effort="low"' in quoi_changer({"type": "raisonnement", "model": "o4-mini", "preuve": {"effort": "low"}})
+    assert "cache_control" in quoi_changer({"type": "cache_prompt", "model": "claude-sonnet-4-5"})
+    assert "automatiquement" in quoi_changer({"type": "cache_prompt", "model": "gpt-4o"})
+    assert quoi_changer({"type": "regles", "model": "gpt-4o"}) is None

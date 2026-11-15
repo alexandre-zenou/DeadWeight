@@ -3,7 +3,7 @@ PY := $(shell command -v python3.11 || command -v python3)
 VENV := .venv
 BIN := $(VENV)/bin
 
-.PHONY: dev install test lint record audit audit-complet demo prices e2e catalog tester
+.PHONY: dev install test lint record audit audit-complet demo prices e2e catalog tester demo-video
 
 dev: install .env.local
 	@set -a; . ./.env.local; set +a; \
@@ -67,15 +67,21 @@ e2e: install
 # audit, micro-PR (REPO=… les ouvre avec gh), puis Slack si SLACK_WEBHOOK_URL (sinon slack.md seulement)
 AUDIT_COMPLET_OUT ?= out/audit-complet
 audit-complet: install
-	@test -n "$(SOURCE)" || { echo "Usage : make audit-complet SOURCE=<n8n:id|dossier|gateway|events.jsonl|journaux> [REPO=…] [DEMO=1]"; exit 2; }
+	@test -n "$(SOURCE)" || { echo "Usage : make audit-complet SOURCE=<n8n:id|dossier|gateway|events.jsonl|journaux> [REPO=…] [DEMO=1] [PROJECT=<texte>|ALL=1]"; exit 2; }
 	@set -a; if [ -f .env.local ]; then . ./.env.local; fi; set +a; \
 	$(BIN)/python -m scripts.audit_complet "$(SOURCE)" --out "$(AUDIT_COMPLET_OUT)" \
-		$(if $(REPO),--repo "$(REPO)") $(if $(DEMO),--demo)
+		$(if $(REPO),--repo "$(REPO)") $(if $(DEMO),--demo) \
+		$(if $(PROJECT),--project "$(PROJECT)") $(if $(ALL),--all-projects)
 
 # scénario testeur guidé (O/n) : WF=<id n8n>, SOURCE par défaut n8n:<id> si N8N_URL, OUI=1 accepte tout
 TESTER_OUT ?= out/tester
 tester: install
-	@test -n "$(WF)" || { echo "Usage : make tester WF=<id> [SOURCE=…] [REPO=…] [OUI=1]"; exit 2; }
+	@test -n "$(WF)" || { echo "Usage : make tester WF=<id> [SOURCE=…] [REPO=…] [OUI=1] [MIN_APPELS=…]"; exit 2; }
 	@set -a; if [ -f .env.local ]; then . ./.env.local; fi; set +a; \
-	$(BIN)/python -m scripts.tester "$(WF)" --out "$(TESTER_OUT)" \
+	$(if $(MIN_APPELS),DW_MIN_CALLS="$(MIN_APPELS)") $(BIN)/python -m scripts.tester "$(WF)" --out "$(TESTER_OUT)" \
 		$(if $(SOURCE),--source "$(SOURCE)") $(if $(REPO),--repo "$(REPO)") $(if $(OUI),--oui)
+
+# démo scénarisée pour la vidéo (chiffres illustratifs de demo/scenario-4553.json, aucun appel réseau)
+SCENARIO ?= demo/scenario-4553.json
+demo-video: install
+	@$(BIN)/python -m scripts.demo_scenario "$(SCENARIO)"

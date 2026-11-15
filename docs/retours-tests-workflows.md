@@ -219,7 +219,7 @@ Synthèse dans `docs/analyser-un-workflow.md`, « Ce qui a été vérifié pour 
 | --- | --- | --- | --- | --- | --- |
 | 1 | Le rejeu affiche encore une projection mensuelle absurde | haute | `proof/replay.py` | Récap Gmail, OpenAI story flow | ouvert |
 | 2 | R1 conseille des « règles fixes » que le rejeu refuse ensuite | haute | `report/audit.py`, `proof/` | Récap Gmail | ouvert |
-| 3 | Le rejeu ne peut presque jamais conclure sous ~90 appels | moyenne | `proof/replay.py`, `rules/low_entropy.py` | Récap Gmail, OpenAI story flow | ouvert |
+| 3 | Le rejeu ne peut presque jamais conclure sous ~90 appels | moyenne | `proof/replay.py`, `rules/low_entropy.py` | Récap Gmail, OpenAI story flow | en partie : le rapport dit « non conclu » et le volume manquant ; seuil inchangé |
 | 4 | La projection mensuelle surestime les workflows par lots, même après une heure | haute | `report/audit.py`, `report/cost.py` | Récap Gmail (2 passages) | corrigé (#98) |
 | 5 | Choix de R5 à valider en équipe | basse | `rules/unbounded_loop.py` | tests D2.4 | ouvert |
 | 6 | Heuristique de traces jamais confrontée à un historique réécrit | basse | `gateway/traces.py` | aucun (à tester) | ouvert |
@@ -227,7 +227,7 @@ Synthèse dans `docs/analyser-un-workflow.md`, « Ce qui a été vérifié pour 
 | 8 | Les agents qui n'exécutent qu'une seule commande échappent à toutes les règles | haute | `rules/agent_where_chain.py` | Miguel shorts-factory (lecture du code) | ouvert |
 | 9 | Agents facturés à l'abonnement : le coût en dollars par token ne reflète pas ce qu'ils coûtent | moyenne | `report/cost.py`, `report/audit.py` | Miguel shorts-factory (lecture du code) | ouvert |
 | 10 | Les agents qui se passent le relais (la sortie de l'un devient l'entrée de l'autre) ne sont pas regroupés en trace | haute | `gateway/traces.py` | OpenAI story flow | ouvert |
-| 11 | L'API Responses d'OpenAI, celle du SDK Agents par défaut, n'est pas capturée | haute | `gateway/proxy.py`, `gateway/capture.py` | OpenAI story flow | ouvert |
+| 11 | L'API Responses d'OpenAI, celle du SDK Agents par défaut, n'est pas capturée | haute | `gateway/proxy.py`, `gateway/capture.py` | OpenAI story flow | corrigé (`gateway/openai_responses.py`, branche feat/connexions-verifiees) |
 | 12 | L'extraction de règles hors ligne apprend des noms propres | moyenne | `proof/extract.py` | OpenAI story flow | ouvert |
 | 13 | La bonne règle se trouve en amont : l'extraction ne regarde que l'entrée de l'appel signalé | moyenne | `proof/extract.py`, `gateway/traces.py` | OpenAI story flow | ouvert |
 | 14 | Sortie structurée : un champ qui ne change jamais n'est pas signalé | moyenne | `rules/low_entropy.py` | OpenAI story flow | ouvert |
@@ -239,7 +239,7 @@ Synthèse dans `docs/analyser-un-workflow.md`, « Ce qui a été vérifié pour 
 | 20 | Le plan de l'agent auditeur présente la projection du rejeu comme un « coût mensuel observé » | haute | `agent/`, `proof/replay.py` | OpenAI story flow (retest) | ouvert |
 | 21 | Les règles de remplacement renvoient la sortie normalisée, pas la sortie d'origine | moyenne | `rules/low_entropy.py`, `proof/extract.py`, `optimize/` | OpenAI story flow (retest) | ouvert |
 | 22 | Banc : les tâches à sortie structurée (`response_format`) ont toujours un score de 0 | haute | `bench/client.py`, `schemas/event.schema.json` | OpenAI story flow (retest) | ouvert |
-| 23 | Les règles cherchent des fragments de mots : `pui` (de « puis-je ») attrape « depuis ». Réponses fausses en production | haute | `proof/extract.py`, `gateway/shortcircuit.py` | Tri tickets (PR appliquée) | ouvert |
+| 23 | Les règles cherchent des fragments de mots : `pui` (de « puis-je ») attrape « depuis ». Réponses fausses en production | haute | `proof/extract.py`, `gateway/shortcircuit.py` | Tri tickets (PR appliquée) | corrigé (mots entiers, `proof/extract.py`) |
 | 24 | `optimize --repo` plante si le dépôt du client contient un lien symbolique cassé | haute | `optimize/patch.py` | Tri tickets | corrigé (#120) |
 | 25 | Titre de la PR `optimize` coupé au milieu d'un mot | basse | `optimize/patch.py` (`pr_text`) | Tri tickets | ouvert |
 | 26 | Dans un dépôt à plusieurs applications, la preuve et `.env.example` sont écrits à la racine, pas dans le dossier de l'application | moyenne | `optimize/patch.py` (`_apply_regles`) | Tri tickets | ouvert |
