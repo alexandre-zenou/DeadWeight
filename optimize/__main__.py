@@ -21,6 +21,7 @@ from optimize.slack import message
 from proof.extract import OpenAICompatibleLLM
 from proof.replay import THRESHOLD
 from report.cost import source_kind
+from rules.structured_output import unwrap_all
 from report.billing import ABONNEMENT, API, load_billing, subscription_only
 
 # seuil de précision en dessous duquel une proposition, même « pass » pour son propre critère (banc de
@@ -54,7 +55,7 @@ def main(argv=None):
     ap.add_argument("--comprehension", help="comprehension.json de python -m connectors.agent_logs (facturation)")
     ap.add_argument("--billing", choices=[ABONNEMENT, API], help="force le mode de facturation, remplace la détection")
     args = ap.parse_args(argv)
-    events = [json.loads(line) for line in Path(args.events).read_text(encoding="utf-8").splitlines() if line.strip()]
+    events = unwrap_all(json.loads(line) for line in Path(args.events).read_text(encoding="utf-8").splitlines() if line.strip())
     keys = bool(os.environ.get("DW_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY"))
     proposals = propose(events, keys_available=keys, llm=_rules_llm(os.environ))
     out = Path(args.out)
