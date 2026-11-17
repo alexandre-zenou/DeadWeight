@@ -29,12 +29,13 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
-from proof.extract import OpenAICompatibleLLM, build_router, extract_rules, gabarit_of, twin_form
+from proof.extract import _MOTS, OpenAICompatibleLLM, build_router, extract_rules, gabarit_of, twin_form, variable_part
 from report.cost import PRICING_PATH, chiffrer, lookup
 from rules.low_entropy import canon, detect, output_of
 
@@ -132,6 +133,66 @@ def _missing_texts(distinct, n):
                    "de plus de ce gabarit, au rythme observé (couverture et répétitions).")
 
 
+MEMORIZED_WORDS = 4  # une alternative de quatre mots ou plus est une phrase, pas un mot-clé (ADR 0002)
+_WRAPPED = re.compile(r'^\\b\(\?:(.*)\)s\?\\b$')  # forme posée par proof.extract.whole_words
+_ESCAPE_CLASS = re.compile(r'\\[sSwWdDbB]')
+
+
+def _alternatives(pattern):
+    """Alternatives de premier niveau d'une regex (les | dans des groupes ou des classes restent dedans)."""
+    unwrapped = _WRAPPED.match(pattern)
+    if unwrapped:
+        pattern = unwrapped.group(1)
+    parts, current, depth, in_class, escaped = [], '', 0, False, False
+    for ch in pattern:
+        if escaped:
+            current, escaped = current + ch, False
+            continue
+        if ch == '\\':
+            escaped = True
+        elif in_class:
+            in_class = ch != ']'
+        elif ch == '[':
+            in_class = True
+        elif ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        elif ch == '|' and depth == 0:
+            parts.append(current)
+            current = ''
+            continue
+        current += ch
+    return parts + [current]
+
+
+def _words(alternative):
+    """Mots d'une alternative, syntaxe de regex retirée (\\s, \\b… séparent des mots)."""
+    return _MOTS.findall(_ESCAPE_CLASS.sub(' ', alternative).lower())
+
+
+def memorized_rules(rules, examples=()):
+    """Règles qui ressemblent à du par-cœur : signalées, jamais interdites ni bloquantes (ADR 0002).
+
+    Une alternative est signalée si elle fait au moins MEMORIZED_WORDS mots, ou si sa forme normalisée
+    (cf. proof.extract.twin_form) est celle d'un exemple d'extraction entier, alors joint au signalement.
+    ``examples`` : textes des exemples d'extraction, partie variable seulement.
+    """
+    by_form = {}
+    for example in examples:
+        by_form.setdefault(twin_form(example), example.strip())
+    by_form.pop('', None)
+    flagged = []
+    for category in rules.get('categories', []):
+        for alternative in _alternatives(category['regex']):
+            copied = by_form.get(twin_form(_ESCAPE_CLASS.sub(' ', alternative)))
+            if copied is None and len(_words(alternative)) < MEMORIZED_WORDS:
+                continue
+            flagged.append({'category': category['key'], 'alternative': alternative,
+                            **({'example': copied} if copied is not None else {})})
+    return flagged
+
+
 def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=None,
            threshold=THRESHOLD, prices=None):
     """Rend un dict au format schemas/proof.schema.json (+ champs explicatifs).
@@ -151,6 +212,8 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
     # jumeaux (ADR 0002) : même forme normalisée, sur la partie variable comme à l'extraction
     gabarit = rules.get('gabarit') or gabarit_of([_user_text(e) for e in group])
     seen_forms = {twin_form(_user_text(by_id[i]), gabarit) for i in used if i in by_id}
+    examples = [variable_part(_user_text(by_id[s['event_id']]), gabarit)
+                for s in finding.get('evidence', {}).get('samples', []) if s.get('event_id') in by_id]
     pairs, twins = [], 0
     billed = []  # tous les appels exploitables du groupe : base des économies, jumeaux compris
     for e in group:
@@ -309,6 +372,7 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         'threshold': threshold,
         'verdict': verdict,
         'reasons': reasons,
+        'memorized_rules': memorized_rules(rules, examples),  # après le verdict, qu'il ne change jamais
     }
 
 

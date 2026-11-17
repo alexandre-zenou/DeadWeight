@@ -164,6 +164,9 @@ def test_des_regles_par_coeur_sur_des_jumeaux_finissent_non_conclu():
     assert proof['n_distinct'] == 2 and proof['agreement_rate'] == 1
     assert proof['verdict'] == 'inconclusive'
     assert any('Il manque 28 texte(s) distinct(s)' in r for r in proof['reasons'])
+    flagged = {m['alternative']: m.get('example') for m in proof['memorized_rules']}
+    assert sorted(flagged) == sorted(p for p, _ in phrases)  # signalées, le verdict reste celui de la preuve
+    assert flagged['ma facture est fausse'] == "Bonjour, ma facture est fausse (janvier 100)"
 
 
 def test_fallback_is_capped_and_spaced():
@@ -328,3 +331,39 @@ def test_les_economies_comptent_tous_les_appels_du_groupe_jumeaux_compris():
     assert proof['n_replayed'] == 70 and proof['n_excluded_twins'] == 29
     assert proof['rules_coverage'] == pytest.approx(60 / 100, abs=1e-4)
     assert proof['cost_after_month_usd'] == pytest.approx(proof['cost_before_month_usd'] * 40 / 100, rel=1e-3)
+
+
+# Alerte par-cœur (ADR 0002) : signalée, jamais bloquante.
+def test_une_alternative_de_quatre_mots_est_signalee_par_coeur():
+    events = _events(40)
+    rules = {'categories': [{'key': 'spam', 'regex': 'gagnez|le montant a doublé'}]}
+    proof = replay(_finding(events), events, rules)
+    assert proof['memorized_rules'] == [{'category': 'spam', 'alternative': 'le montant a doublé'}]
+
+
+def test_la_copie_normalisee_d_un_exemple_entier_est_signalee_avec_l_exemple():
+    events = _events(40)
+    events[0]['request']['messages'][0]['content'] = 'Bonjour, Facture fausse ! 12 mars'
+    rules = {'categories': [{'key': 'spam', 'regex': r'gagnez|facture\ fausse'}]}
+    proof = replay(_finding(events, samples=['e0']), events, rules)
+    assert proof['memorized_rules'] == [{'category': 'spam', 'alternative': r'facture\ fausse',
+                                         'example': 'Bonjour, Facture fausse ! 12 mars'}]
+
+
+def test_des_mots_cles_courts_ne_sont_pas_signales(dataset):
+    events = _events(40)
+    events[0]['request']['messages'][0]['content'] = 'Gagnez !'  # un exemple d'un seul mot, pas recopié ici
+    rules = {'categories': [{'key': 'spam', 'regex': r'\b(?:iphone|gratuit|gagnant)s?\b'},
+                            {'key': 'facture', 'regex': r'facture|montant\s+faux|(?:avoir|remboursement)'}]}
+    assert replay(_finding(events, samples=['e0']), events, rules)['memorized_rules'] == []
+    events, findings = dataset
+    finding = findings['mail-triage']
+    assert replay(finding, events, extract_rules(finding, events))['memorized_rules'] == []
+
+
+def test_le_signalement_par_coeur_ne_change_jamais_le_verdict():
+    events = _events(40)
+    keyword = replay(_finding(events), events, RULES)
+    by_heart = replay(_finding(events), events, {'categories': [{'key': 'spam', 'regex': 'gagnez|un deux trois quatre'}]})
+    assert by_heart['memorized_rules'] and keyword['verdict'] == by_heart['verdict'] == 'pass'
+    assert by_heart['reasons'] == keyword['reasons'] == []

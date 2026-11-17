@@ -103,6 +103,22 @@ def test_inconclusive_proposal_has_its_own_label_and_is_not_counted_as_proven(pr
     assert "1 non conclue, 0 rejetée" in hidden
 
 
+
+def test_dev_page_shows_the_by_heart_alert_and_the_distinct_texts_replayed(proposals):
+    """ADR 0002 : la page développeur montre les règles signalées par-cœur et le nombre de textes distincts."""
+    from optimize.devpage import render
+    triage = next(p for p in proposals if p["type"] == "regles" and p["app_id"] == "mail-triage")
+    proof = {**triage["preuve"], "n_replayed": 397, "n_distinct": 64, "memorized_rules": [
+        {"category": "facture", "alternative": "le montant a doublé"},
+        {"category": "support", "alternative": "page blanche", "example": "Bonjour, page blanche <b>"}]}
+    page = render([{**triage, "preuve": proof}])
+    assert "397 appels rejoués, 64 textes distincts" in page
+    assert "par-cœur" in page and "le montant a doublé" in page and "facture" in page
+    assert "Bonjour, page blanche &lt;b&gt;" in page  # l'exemple recopié, échappé
+    assert "Prouvée" in page  # signalé, le verdict ne change pas
+    plain = render([{**triage, "preuve": {**proof, "memorized_rules": []}}])
+    assert "par-cœur" not in plain and "64 textes distincts" in plain
+
 def _repo(tmp_path):
     repo = tmp_path / "client"
     repo.mkdir()
