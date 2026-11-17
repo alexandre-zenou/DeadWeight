@@ -25,6 +25,25 @@ def _row(key, m):
             f"<td class='mute'>{e(m.get('hypothese') or '')}</td></tr>")
 
 
+def _proof_notes(proof):
+    """Textes distincts rejoués et alerte par-cœur (ADR 0002) : ici seulement, jamais dans le rapport
+    dirigeant. L'alerte signale, elle ne change pas le verdict."""
+    e = html.escape
+    out = ""
+    if proof.get("n_distinct") is not None:
+        out += (f"<p class='mute'>{proof['n_replayed']} appels rejoués, {proof['n_distinct']} textes distincts "
+                "(l'accord se compte une fois par texte distinct).</p>")
+    flagged = proof.get("memorized_rules") or []
+    if flagged:
+        items = "".join(
+            f"<li><b>{e(m['category'])}</b> : « {e(m['alternative'])} »"
+            + (f" recopie l'exemple d'extraction « {e(m['example'])} »" if m.get("example") else "") + "</li>"
+            for m in flagged)
+        out += (f"<p class='na'>Règles qui ressemblent à du par-cœur ({len(flagged)}) : justes si votre trafic "
+                f"se répète vraiment, fragiles sur une formulation nouvelle.</p><ul class='na'>{items}</ul>")
+    return out
+
+
 def render(proposals, diffs=None):
     """``diffs`` : {index: texte du diff} pour les propositions dont une micro-PR a été préparée."""
     e, diffs = html.escape, diffs or {}
@@ -37,7 +56,7 @@ def render(proposals, diffs=None):
         diff = f"<details><summary>Micro-PR préparée</summary><pre>{e(diffs[i])}</pre></details>" if i in diffs else ""
         cards.append(f"""<div class="card"><span class="tag {cls}">{label}</span>
 <b> {e(p['app_id'])}</b> <span class="mute">· {e(p['type'])} · {e(p.get('model') or '')}</span>
-<p>{e(p['changement'])}</p>{f'<ul class="{cls}">{why}</ul>' if why else ''}
+<p>{e(p['changement'])}</p>{f'<ul class="{cls}">{why}</ul>' if why else ''}{_proof_notes(p.get('preuve') or {})}
 <table><tr><th>Mesure</th><th>Valeur</th><th>Statut</th><th>Hypothèse</th></tr>{rows}</table>{diff}</div>""")
     return f"""<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Propositions Deadweight</title>

@@ -149,3 +149,15 @@ def test_findings_are_projected_over_the_same_period_as_the_total():
     assert alone["cout_mensuel_usd"] is None                            # moins d'un jour seul
     total = _figures(busy + other, period)["cout_mensuel_usd"]
     assert shared["cout_mensuel_usd"] <= total                          # jamais plus que le total
+
+
+def test_executive_report_shows_no_by_heart_alert_nor_distinct_texts():
+    """ADR 0002 : l'alerte par-cœur et le nombre de textes distincts restent sur la page développeur."""
+    proof = {"verdict": "pass", "n_replayed": 397, "n_distinct": 64,
+             "memorized_rules": [{"category": "facture", "alternative": "le montant a doublé",
+                                  "example": "Bonjour, le montant a doublé"}]}
+    proposition = {"verdict": "pass", "app_id": "mail-triage", "changement": "Remplacer les appels par des règles.",
+                   "mesures": {"precision": {"valeur": 100.0, "statut": "mesuré", "unite": "%"}}, "preuve": proof}
+    page = render_html(build_report(EVENTS, propositions=[proposition]))
+    assert "mail-triage" in page and "Remplacer les appels par des règles." in page
+    assert "par-cœur" not in page and "le montant a doublé" not in page and "textes distincts" not in page
