@@ -188,8 +188,11 @@ PERSONAS = ["particulier peu à l'aise avec l'informatique", "gérant de PME pre
 TONES = ["poli et formel", "agacé", "très en colère, majuscules par endroits", "confus, s'excuse beaucoup",
          "direct, sans politesse", "familier, tutoiement", "style SMS avec fautes de frappe", "inquiet",
          "ironique", "neutre et factuel", "pressé, phrases incomplètes", "chaleureux"]
+# Écrits par lots, les longs messages sortent deux fois trop courts (médiane 55 mots au premier essai) :
+# chaque fiche longue part donc seule, avec un nombre de mots explicite.
+LONG_BRIEF = "un long message de 100 à 200 mots (au moins 100 mots, compte-les), avec du contexte et des détails"
 LENGTHS = [(0.30, "une à deux phrases, moins de 20 mots"), (0.40, "un paragraphe de 30 à 70 mots"),
-           (0.30, "un long message de 90 à 200 mots, avec du contexte et des détails")]
+           (0.30, LONG_BRIEF)]
 FEATURES = ["pas de formule de politesse du tout", "un numéro de commande ou de facture inventé",
             "une citation d'un message d'erreur", "une signature avec nom et fonction", "une question à la fin",
             "une liste à puces", "une allusion à un échange précédent", "une date précise",
@@ -224,7 +227,7 @@ def write_tickets(client, n: int, path: Path) -> list[dict]:
     sheets = briefs(n * 2)  # réserve de fiches pour remplacer les jumeaux écartés
     nxt = max((t["fiche_n"] for t in tickets), default=-1) + 1
     while len(tickets) < n and nxt < len(sheets):
-        batch = list(enumerate(sheets[nxt:nxt + BATCH], start=nxt))
+        batch = _next_batch(sheets, nxt)
         nxt += len(batch)
         listing = "\n".join(f"{i}. " + " ; ".join(f"{k} : {v}" for k, v in b.items()) for i, b in batch)
         resp = client.chat.completions.create(
@@ -246,6 +249,19 @@ def write_tickets(client, n: int, path: Path) -> list[dict]:
                 f.write(json.dumps(t, ensure_ascii=False) + "\n")
         print(f"  {len(tickets)}/{n} tickets écrits", file=sys.stderr)
     return tickets
+
+
+def _next_batch(sheets: list[dict], start: int) -> list[tuple[int, dict]]:
+    """Jusqu'à BATCH fiches à la suite ; une fiche longue part toujours seule."""
+    batch = []
+    for i in range(start, min(start + BATCH, len(sheets))):
+        is_long = sheets[i]["longueur"] == LONG_BRIEF
+        if is_long and batch:
+            break
+        batch.append((i, sheets[i]))
+        if is_long:
+            break
+    return batch
 
 
 def _written(content: str | None) -> dict[int, dict]:
