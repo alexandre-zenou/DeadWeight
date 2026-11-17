@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from proof.extract import OpenAICompatibleLLM, build_router, extract_rules
+from proof.extract import OpenAICompatibleLLM, build_router, extract_rules, twin_form
 from rules.low_entropy import detect
 
 
@@ -148,10 +148,14 @@ def test_dataset_mail_triage_offline_coverage():
     assert result['method'] == 'offline' and result['coverage'] >= .8
     router = build_router(result)
     by_id = {e['event_id']: e for e in events}
-    samples = finding['evidence']['samples']
-    correct = sum(router('\n'.join(m['content'] for m in by_id[s['event_id']]['request']['messages']
-                                  if m['role'] == 'user')) == s['output'] for s in samples)
-    assert result['coverage'] == pytest.approx(correct / len(samples))
+    distinct = {}  # couverture sur un exemple par groupe de jumeaux (le premier)
+    for s in finding['evidence']['samples']:
+        text = '\n'.join(m['content'] for m in by_id[s['event_id']]['request']['messages']
+                         if m['role'] == 'user')
+        distinct.setdefault(twin_form(text, result['gabarit']), (text, s['output']))
+    assert len(distinct) < len(finding['evidence']['samples'])
+    correct = sum(router(text) == output for text, output in distinct.values())
+    assert result['coverage'] == pytest.approx(correct / len(distinct))
 
 
 def test_openai_adapter_request_and_response_are_structured(monkeypatch):
@@ -228,3 +232,46 @@ def test_extraction_hors_ligne_produit_des_mots_entiers():
     assert route("paiements en retard") is None or route("paiements") == "facture"
     assert route("connexions") == "support"
     assert route("supportable") is None  # fragment d'un autre mot
+
+
+def twin_data():
+    """Trois appels dont deux jumeaux (politesse, chiffres et mois près) et un texte distinct."""
+    texts = {'a': 'Bonjour, facture 1234 de mars à payer. Cordialement',
+             'b': 'facture 98 de juin à payer !',
+             'c': 'Mot de passe oublié, accès bloqué'}
+    outputs = {'a': 'facture', 'b': 'facture', 'c': 'support'}
+    finding = {'rule': 'low_entropy_output', 'event_ids': list(texts), 'evidence': {
+        'samples': [{'event_id': i, 'output': outputs[i]} for i in texts],
+        'output_distribution': {'facture': 2, 'support': 1}}}
+    events = [{'event_id': i, 'request': {'messages': [{'role': 'user', 'content': t}]}}
+              for i, t in texts.items()]
+    return finding, events
+
+
+def test_le_llm_ne_voit_qu_un_exemple_par_groupe_de_jumeaux():
+    finding, events = twin_data()
+    llm = FakeLLM({'categories': [{'key': 'facture', 'regex': 'facture'},
+                                  {'key': 'support', 'regex': 'passe'}], 'reasoning': 'r'})
+    result = extract_rules(finding, events, llm)
+    [(_, user, _)] = llm.calls
+    assert [s['event_id'] for s in user['samples']] == ['a', 'c']
+    assert result['method'] == 'llm' and result['coverage'] == 1
+
+
+def test_l_extraction_hors_ligne_travaille_sur_les_memes_exemples_dedoublonnes():
+    finding, events = twin_data()
+    result = extract_rules(finding, events)
+    assert result['method'] == 'offline' and result['coverage'] == 1
+    assert 'sur 2 exemples' in result['reasoning']
+
+
+def test_un_groupe_de_jumeaux_est_montre_avec_la_reponse_majoritaire_comme_la_preuve():
+    finding, events = twin_data()
+    finding['evidence']['samples'][0]['output'] = 'support'  # a : minoritaire face à b et d
+    finding['evidence']['samples'].append({'event_id': 'd', 'output': 'facture'})
+    events.append({'event_id': 'd', 'request': {'messages': [
+        {'role': 'user', 'content': 'Facture 7 de mai à payer'}]}})
+    llm = FakeLLM({'categories': [], 'reasoning': 'r'})
+    extract_rules(finding, events, llm)
+    [(_, user, _)] = llm.calls
+    assert [(s['event_id'], s['output']) for s in user['samples']] == [('b', 'facture'), ('c', 'support')]

@@ -212,6 +212,21 @@ def _examples(finding, events):
     return samples, skipped
 
 
+def _one_per_twin_group(samples):
+    """Un exemple d'extraction par groupe de jumeaux (ADR 0002), avec la normalisation de la preuve :
+    l'extraction voit plus de sujets différents. Entrées déjà réduites à leur partie variable.
+    L'exemple gardé porte la réponse majoritaire du groupe, la référence de la preuve ; à égalité,
+    la première rencontrée."""
+    groups = {}
+    for sample in samples:
+        groups.setdefault(twin_form(sample['input']), []).append(sample)
+    kept = []
+    for group in groups.values():
+        [(majority, _)] = Counter(s['output'] for s in group).most_common(1)
+        kept.append(next(s for s in group if s['output'] == majority))
+    return kept
+
+
 def _offline(samples, distribution):
     # Même score que patcher/rules_offline.py : fréquence dans la catégorie,
     # pénalisée par la présence dans les autres catégories ; aucun code généré.
@@ -252,6 +267,7 @@ def extract_rules(finding, events, llm=None):
         gabarit = gabarit_of([_text(by_id[i]) for i in finding.get('event_ids', []) if i in by_id]
                              or [s['input'] for s in samples])
         samples = [{**s, 'input': variable_part(s['input'], gabarit)} for s in samples]
+        samples = _one_per_twin_group(samples)
         observed = {s['output'] for s in samples}
         distribution = Counter(s['output'] for s in samples)
         original = finding['evidence'].get('output_distribution', {})

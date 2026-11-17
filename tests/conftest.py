@@ -50,9 +50,10 @@ def _fake_keys(monkeypatch):
             monkeypatch.setenv(var, "test-key")
 
 
-# Jeu v1 et preuve sur textes distincts (#7, ADR 0002) : mail-triage n'y garde que 26 textes distincts
-# remplacés, sous le minimum de 30 ; il passe « non conclu ». Les tests des modules qui ont besoin d'une
-# preuve « prouvé » sur v1 abaissent le minimum, comme DW_MIN_CALLS pour une démo sur peu de données.
+# Jeu v1 et preuve sur textes distincts (#7, ADR 0002) : mail-triage n'y gardait que 26 textes distincts
+# remplacés, sous le minimum de 30. Depuis l'extraction dédoublonnée (#8), il en garde 42 et passe ; les
+# tests qui ont besoin d'une preuve « prouvé » sur v1 gardent ce minimum abaissé par précaution, comme
+# DW_MIN_CALLS pour une démo sur peu de données.
 MIN_REPLAY_V1 = 25
 
 

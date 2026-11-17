@@ -179,7 +179,7 @@ def test_parcours_complet_interactif(tmp_path, capsys, no_gh):
         assert title in out
     assert "1872 appels IA" in out
     assert "brainstorm-bot" not in out  # 82.5 % : sous le seuil d'affichage, écarté partout
-    assert "170 entrées rejouées" in out and "-73.3 %" in out  # jetons mesurés, plus de « ~ »
+    assert "170 entrées rejouées" in out and "-81.1 %" in out  # jetons mesurés, plus de « ~ »
     assert "633 ms → 0 ms" in out  # latence médiane à -100 % : ms brutes, pas un pourcentage
     assert "Gains sur l’ensemble du workflow" in out and "coût par exécution" in out
     assert no_gh == [str(tmp_path)] and f"PR ouverte : {PR_URL}" in out
