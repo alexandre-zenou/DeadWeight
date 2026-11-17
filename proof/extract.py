@@ -139,6 +139,39 @@ def variable_part(text, gabarit):
     return text
 
 
+# Jumeaux (ADR 0002) : français et anglais ; d'autres langues gardent leur politesse, ce qui rend
+# seulement la détection plus prudente. Formules écrites sans ponctuation, comme la forme normalisée.
+# « may » n'y est pas : verbe anglais trop courant, deux textes différents deviendraient jumeaux.
+_MOIS = set("""janvier fevrier février mars avril mai juin juillet aout août septembre octobre novembre
+decembre décembre january february march april june july august september october november
+december""".split())
+_POLITESSE = sorted((tuple(f.split()) for f in """bonjour|bonsoir|salut|coucou|hello|hi|hey|dear|
+madame|monsieur|madame monsieur|chère madame|cher monsieur|good morning|good afternoon|merci|
+merci d avance|merci beaucoup|merci par avance|d avance merci|cordialement|bien cordialement|
+très cordialement|sincères salutations|bien à vous|bonne journée|bonne soirée|belle journée|
+thanks|thank you|thanks in advance|many thanks|regards|best regards|kind regards|
+cheers|sincerely""".replace('\n', '').split('|')), key=len, reverse=True)
+_MOTS = re.compile(r'[^\W\d_]+')
+
+
+def twin_form(text, gabarit=None):
+    """Forme normalisée d'un texte : deux textes de même forme sont jumeaux (même texte pour la
+    preuve). Partie variable seulement (consigne fixe retirée), minuscules, sans chiffres, noms de
+    mois ni ponctuation, formules de politesse de début et de fin retirées. Égalité stricte après
+    normalisation, jamais de ressemblance approchée."""
+    words = [w for w in _MOTS.findall(variable_part(text, gabarit).lower()) if w not in _MOIS]
+    trimmed = True
+    while words and trimmed:
+        trimmed = False
+        for formula in _POLITESSE:
+            k = len(formula)
+            if tuple(words[:k]) == formula:
+                words, trimmed = words[k:], True
+            if words and tuple(words[-k:]) == formula:
+                words, trimmed = words[:-k], True
+    return ' '.join(words)
+
+
 def build_router(rules):
     """Compile les données en un routeur : première correspondance re.I sur la partie variable du
     message (consigne fixe retirée, cf. ``gabarit_of``), sinon None."""

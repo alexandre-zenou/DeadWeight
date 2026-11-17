@@ -61,7 +61,10 @@ print("       constats :", "; ".join(re.findall(r"Constats, du plus coûteux au 
 PY
 
 echo "== 4. Preuve, miroir, court-circuit"
-$PY -m proof.replay fixtures/dataset/v1/events.jsonl --out out/e2e/proofs 2>&1 | grep -E "VERDICT" | sed 's/^/       /'
+# historique de tri à textes distincts (ADR 0002) : le jeu v1 n'a pas assez de textes distincts pour prouver
+$PY "$E2E/mails.py" out/e2e/triage.jsonl
+$PY -m proof.replay out/e2e/triage.jsonl --out out/e2e/proofs 2>&1 | grep -E "VERDICT" | sed 's/^/       /'
+grep -q '"verdict": "pass"' out/e2e/proofs/proof-*.json && ok "preuve sur textes distincts : prouvé" || ko "preuve : aucun verdict prouvé"
 start_gw 9311 GATEWAY_DB=out/e2e/mirror.db GATEWAY_MIRROR=out/e2e/proofs GATEWAY_MIRROR_LOG=out/e2e/mirror.jsonl
 OUT=$($PY "$E2E/traffic.py" http://127.0.0.1:9311 triage 2>&1 | tail -1)
 kill -TERM $GW; wait $GW 2>/dev/null

@@ -18,6 +18,9 @@ from optimize.slack import message
 from report.audit import build_report, render_html
 from report.billing import billing_section, load_billing, peak_window, subscription_only
 
+# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
+pytestmark = pytest.mark.usefixtures("minimum_v1")
+
 ROOT = Path(__file__).resolve().parent.parent
 EVENTS = [json.loads(line) for line in (ROOT / "fixtures/dataset/v1/events.jsonl").read_text().splitlines()
           if line.strip()]
@@ -26,7 +29,7 @@ SUB = {"claude-code": {"mode": "abonnement", "source": "test"}}
 
 
 @pytest.fixture(scope="module")
-def proposals():
+def proposals(minimum_v1):
     return propose(EVENTS)
 
 

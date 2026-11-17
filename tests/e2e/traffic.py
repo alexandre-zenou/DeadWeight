@@ -4,19 +4,18 @@ import sys
 import urllib.request
 
 import openai
+from mails import SYSTEM, mail
 
 GW, KEY = sys.argv[1], "sk-e2e-NE-DOIT-JAMAIS-SORTIR"
-SYSTEM = "Classe le mail en une seule etiquette : spam, facture ou support."
-MAILS = ["Gagnez un iPhone maintenant", "Votre facture de septembre", "Mon compte est bloque",
-         "Offre exclusive pour vous", "Facture impayee numero 42", "Je n'arrive pas a me connecter"]
 mode = sys.argv[2] if len(sys.argv) > 2 else "full"
 client = openai.OpenAI(base_url=GW + "/v1", api_key=KEY, max_retries=0)
 counts = {"openai": 0, "stream": 0, "tools": 0, "anthropic": 0, "gemini": 0, "shortcircuit": 0}
 
+# 40 mails distincts, absents de l'historique de preuve (mails.py) : de vraies entrées nouvelles
 for i in range(40):
     raw = client.chat.completions.with_raw_response.create(
         model="gpt-4o", extra_headers={"x-deadweight-app": "mail-triage"},
-        messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": f"{MAILS[i % 6]} ({i})"}])
+        messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": mail(i, decalage=1)[0]}])
     raw.parse()
     counts["openai"] += 1
     counts["shortcircuit"] += bool(raw.headers.get("x-deadweight-shortcircuit"))

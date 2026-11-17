@@ -9,13 +9,16 @@ from optimize.patch import make_patch, pr_text
 from optimize.propose import MESURE, propose
 from optimize.slack import LEGEND, message
 
+# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
+pytestmark = pytest.mark.usefixtures("minimum_v1")
+
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = [json.loads(line) for line in (ROOT / "fixtures/dataset/v1/events.jsonl").read_text().splitlines()
           if line.strip()]
 
 
 @pytest.fixture(scope="module")
-def proposals():
+def proposals(minimum_v1):
     return propose(EVENTS)
 
 
