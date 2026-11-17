@@ -94,3 +94,14 @@ longueurs variées (chaque tranche court < 25 mots, moyen, long > 80 mots ≥ 15
 les réponses du tri, aucun début ni fin de trois mots dans plus de 10 % des tickets.
 
 La v1 et `gen_dataset.py` sont inchangés.
+
+### Règles et preuves sur la v2 (#10)
+
+`v2/rules.json` : les règles d'aiguillage que DeadWeight a écrites une fois sur la v2, avec le LLM de l'optimiseur
+(gpt-4.1-mini), pour chaque constat `low_entropy_output` (`support-ticket-triage`, `spam-checker`). Générer :
+`python3 fixtures/dataset/gen_rules_v2.py` (`DW_LLM_API_KEY`, quelques centimes, jamais en CI) ; `--workflows`
+reconstruit seulement les workflows d'exemple corrigés à partir des règles enregistrées, sans clé.
+
+`tests/test_preuves_v2.py` rejoue ces règles sans réseau et fige les verdicts : les deux sont **refusés** (tri
+74,9 %, spam 81,6 % d'accord, sous 95 %). Des mots-clés ne suffisent pas à reproduire gpt-4o-mini sur des tickets
+variés. Aucun workflow corrigé n'est donc livré dans `workflows/` : un workflow corrigé n'existe que si sa preuve passe.
