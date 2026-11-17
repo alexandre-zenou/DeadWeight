@@ -12,8 +12,6 @@ from gateway import fake_openai
 from gateway.proxy import make_app
 from proof.replay import main as replay_main
 
-# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
-pytestmark = pytest.mark.usefixtures("minimum_v1")
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((ROOT / "schemas/event.schema.json").read_text())
@@ -22,7 +20,7 @@ KEY = "sk-test-NE-DOIT-JAMAIS-SORTIR"
 
 
 @pytest.fixture(scope="module")
-def proofs(tmp_path_factory, minimum_v1):
+def proofs(tmp_path_factory):
     out = tmp_path_factory.mktemp("proofs")
     replay_main([str(ROOT / "fixtures/dataset/v1/events.jsonl"), "--out", str(out)])
     return out

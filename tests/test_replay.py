@@ -60,17 +60,16 @@ def _finding(events, samples=()):
 RULES = {'categories': [{'key': 'spam', 'regex': 'gagnez'}]}
 
 
-def test_dataset_mail_triage_non_conclu_une_fois_les_jumeaux_ecartes(dataset):
-    # ADR 0002 : la v1 ne connaît que 28 phrases ; sans leurs jumeaux, il reste trop peu de textes
-    # distincts remplacés. « Prouvé » avant, « non conclu » maintenant : changement accepté (#7).
+def test_dataset_mail_triage_prouve_avec_une_extraction_dedoublonnee(dataset):
+    # ADR 0002 : jumeaux écartés, « non conclu » sur la v1 (#7). L'extraction ne voit plus qu'un
+    # exemple par groupe de jumeaux (#8) : ses règles couvrent assez de textes distincts pour conclure.
     events, findings = dataset
     finding = findings['mail-triage']
     proof = replay(finding, events, extract_rules(finding, events))
-    assert proof['verdict'] == 'inconclusive'
+    assert proof['verdict'] == 'pass' and proof['reasons'] == []
     assert proof['n_replayed'] == 170 and proof['n_excluded_twins'] == 194
-    assert proof['n_distinct'] == 50 and proof['n_distinct_replaced'] < MIN_REPLAY
-    assert proof['agreement_rate'] == 1  # rien à reprocher aux règles : il manque des textes
-    assert any('Il manque' in r and 'texte(s) distinct(s)' in r for r in proof['reasons'])
+    assert proof['n_distinct'] == 50 and proof['n_distinct_replaced'] >= MIN_REPLAY
+    assert proof['agreement_rate'] == 1
     assert proof['cost_after_month_usd'] < proof['cost_before_month_usd']
     for field in ('patch_id', 'finding_id', 'n_replayed', 'agreement_rate', 'threshold',
                   'p95_before_ms', 'p95_after_ms', 'cost_before_month_usd', 'cost_after_month_usd'):
@@ -195,7 +194,7 @@ def test_cli_writes_proofs_and_exits_zero_when_not_proven(tmp_path, capsys):
     written = {p.name for p in tmp_path.glob('proof-*.json')}
     assert len(written) == 2
     out = capsys.readouterr().out
-    assert out.count('VERDICT   NON CONCLU') == 2 and 'textes distincts' in out
+    assert out.count('VERDICT   NON CONCLU') == 1 and 'textes distincts' in out  # reviews
 
 
 def test_toute_preuve_produite_respecte_le_contrat(dataset):

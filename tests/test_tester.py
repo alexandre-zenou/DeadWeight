@@ -11,8 +11,6 @@ from scripts.tester import NO_HISTORY, ask, default_source, min_calls_env, run
 from scripts.tester_seuils import pending
 from scripts.tester_ui import cell
 
-# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
-pytestmark = pytest.mark.usefixtures("minimum_v1")
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = ROOT / "fixtures/dataset/v1/events.jsonl"
@@ -179,7 +177,7 @@ def test_parcours_complet_interactif(tmp_path, capsys, no_gh):
         assert title in out
     assert "1872 appels IA" in out
     assert "brainstorm-bot" not in out  # 82.5 % : sous le seuil d'affichage, écarté partout
-    assert "170 entrées rejouées" in out and "-73.3 %" in out  # jetons mesurés, plus de « ~ »
+    assert "170 entrées rejouées" in out and "-81.1 %" in out  # jetons mesurés, plus de « ~ »
     assert "633 ms → 0 ms" in out  # latence médiane à -100 % : ms brutes, pas un pourcentage
     assert "Gains sur l’ensemble du workflow" in out and "coût par exécution" in out
     assert no_gh == [str(tmp_path)] and f"PR ouverte : {PR_URL}" in out

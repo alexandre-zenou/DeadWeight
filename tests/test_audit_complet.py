@@ -12,8 +12,6 @@ from optimize.send import SECTION_MAX, payload, send
 from scripts import audit_complet
 from scripts.audit_complet import detect, notify, run
 
-# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
-pytestmark = pytest.mark.usefixtures("minimum_v1")
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = ROOT / "fixtures/dataset/v1/events.jsonl"
