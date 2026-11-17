@@ -1,9 +1,11 @@
 """La page développeur : toutes les propositions, y compris celles qui ont échoué, avec leurs mesures,
-le statut de chaque chiffre, les raisons d'un refus et la micro-PR préparée. Slack ne montre que les
-gains prouvés ; ici, rien n'est caché."""
+le statut de chaque chiffre, les raisons d'un refus ou d'une preuve non conclue et la micro-PR préparée.
+Slack ne montre que les gains prouvés ; ici, rien n'est caché."""
 import html
 
-VERDICT = {"pass": ("Prouvée", "ok"), "reject": ("Refusée", "ko"), "non_teste": ("Non testée", "na")}
+# « non conclu » (ADR 0002) : trop peu de textes distincts pour trancher ; pas prouvé, pas refusé non plus.
+VERDICT = {"pass": ("Prouvée", "ok"), "reject": ("Refusée", "ko"), "inconclusive": ("Non conclue", "na"),
+           "non_teste": ("Non testée", "na")}
 CSS = """:root{--ink:#1d1d1f;--mute:#6e6e73;--line:#e5e5ea;--ok:#1a7f37;--ko:#b3261e;--na:#8a6d00;--bg:#fff}
 @media (prefers-color-scheme:dark){:root{--ink:#f2f2f7;--mute:#a1a1a6;--line:#38383a;--bg:#161618}}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}

@@ -141,6 +141,9 @@ def test_proof_status_is_decided_by_code_not_by_the_model():
     result = run_agent(tools, llm)
     assert [a["statut"] for a in result["plan"]["actions"]] == ["prouvé par rejeu", "piste à vérifier"]
     assert "[piste à vérifier]" in render_html({**audit(EVENTS), "agent": result})
+    # ADR 0002 : « non conclu » n'est pas prouvé, et le statut ne le dit jamais
+    tools.proofs[TRIAGE] = {**tools.proofs[TRIAGE], "verdict": "inconclusive"}
+    assert tools.proof_status(TRIAGE) == "rejeu non conclu" and "prouvé" not in tools.proof_status(TRIAGE)
 
 
 def test_why_goes_to_the_journal_not_to_the_tool():
@@ -202,6 +205,10 @@ def test_agent_proof_is_shown_on_the_finding_card_with_the_extraction_method():
     import html
     page = html.unescape(render_html(report))
     assert "Rejoué par l'agent auditeur : PASS, 100 % d'accord (règles extraites sans IA)." in page
+    card["preuve_agent"]["verdict"] = "inconclusive"
+    page = html.unescape(render_html(report))
+    assert "Rejoué par l'agent auditeur : NON CONCLU, 100 % d'accord (règles extraites sans IA)." in page
+    assert "INCONCLUSIVE" not in page
 
 
 def test_journal_states_the_real_number_of_checks():
