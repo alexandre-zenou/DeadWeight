@@ -14,8 +14,9 @@ une exception. Chemin proposé : règles, puis secours s'il est fourni, sinon
 l'appel d'origine inchangé. L'accord se mesure sur les textes distincts que le
 chemin remplace (règles + secours), une voix par groupe de jumeaux, la réponse
 majoritaire du modèle d'origine dans le groupe servant de référence ; il en faut
-au moins MIN_REPLAY, sinon le verdict est « inconclusive » (non conclu). Coûts,
-latences et couverture restent comptés par appel.
+au moins MIN_REPLAY, sinon le verdict est « inconclusive » (non conclu). Les
+économies et la part couverte par les règles se comptent par appel sur tout le
+groupe, exemples d'extraction et jumeaux compris ; les latences, par appel rejoué.
 
 Appels API : seul le modèle de secours en fait. Plafond dur (HARD_MAX_CALLS,
 non contournable) et intervalle minimal entre deux appels.
@@ -151,10 +152,14 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
     gabarit = rules.get('gabarit') or gabarit_of([_user_text(e) for e in group])
     seen_forms = {twin_form(_user_text(by_id[i]), gabarit) for i in used if i in by_id}
     pairs, twins = [], 0
+    billed = []  # tous les appels exploitables du groupe : base des économies, jumeaux compris
     for e in group:
         # même étiquette que la règle : texte normalisé, JSON à plat ou signature d'appel d'outil (#105)
         text, expected = _user_text(e), output_of(e)
-        if e['event_id'] in used or e.get('error') is not None or not text.strip() or expected is None:
+        if e.get('error') is not None or not text.strip() or expected is None:
+            continue
+        billed.append((e, text))
+        if e['event_id'] in used:
             continue
         form = twin_form(text, gabarit)
         if form in seen_forms:
@@ -243,23 +248,29 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
             reasons += [f"la réponse « {k} » n'est jamais retrouvée par les règles ({seen[k]} cas)"
                         for k in sorted(seen) if not right[k]]
 
+    # économies par appel sur tout le groupe (ADR 0002) : les exemples d'extraction et leurs jumeaux,
+    # écartés de l'accord, seront eux aussi remplacés par les règles. Hors rejeu, une entrée que les
+    # règles ne couvrent pas reste comptée au modèle d'origine (le secours n'a pas été mesuré dessus).
+    replayed = {e['event_id'] for e, _, _, _ in pairs}
+    extra = [(e, route(text) is not None) for e, text in billed if e['event_id'] not in replayed]
+    n_billed = len(billed)
+    covered = matched + sum(hit for _, hit in extra)
     costs = chiffrer(group)
     before = costs['cout_mensuel_usd']
-    unmatched = n - matched
     after = None
-    if before is not None and n:
+    if before is not None and n_billed:
         if fallback is None:
-            after = before * unmatched / n
+            after = before * (n_billed - covered) / n_billed
         elif fb_ok and fallback_model:
             prices = prices or _prices()
-            orig = [_tokens_cost(prices, e['model'], e['usage'].get('input_tokens'),
-                                 e['usage'].get('output_tokens')) for e, _, _, _ in pairs]
+            orig = {e['event_id']: _tokens_cost(prices, e['model'], e['usage'].get('input_tokens'),
+                                                e['usage'].get('output_tokens')) for e, _ in billed}
             fb = _tokens_cost(prices, fallback_model, fb_in, fb_out) if sent else 0.0
-            if fb is not None and None not in orig and sum(orig) > 0:
-                # rapport secours / origine mesuré sur les mêmes entrées, appliqué au mois
-                # (les entrées plafonnées restent au modèle d'origine)
-                orig_capped = sum(o for (e, _, _, _), o in zip(pairs, orig) if e['event_id'] in capped_ids)
-                after = before * (fb + orig_capped) / sum(orig)
+            if fb is not None and None not in orig.values() and sum(orig.values()) > 0:
+                # coût mesuré du secours, plus les entrées restées au modèle d'origine (plafonnées au
+                # rejeu, ou hors rejeu et non couvertes), rapporté au coût d'origine et appliqué au mois
+                stays = sum(orig[i] for i in capped_ids) + sum(orig[e['event_id']] for e, hit in extra if not hit)
+                after = before * (fb + stays) / sum(orig.values())
     missing = list(costs['manquants'])
     if after is None and before is not None:
         missing.append('coût après non mesurable (usage ou tarif du secours inconnu)')
@@ -285,7 +296,8 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         'matched_by_rules': matched,
         'sent_to_fallback': sent,
         'capped': capped,
-        'rules_coverage': round(matched / n, 4) if n else 0.0,
+        'rules_coverage': round(covered / n_billed, 4) if n_billed else 0.0,
+        'n_billed': n_billed,
         'fallback_model': fallback_model if fallback is not None else None,
         'disagreements': disagreements,
         'cost_before_month_usd': round(before, 4) if before is not None else None,
@@ -309,8 +321,8 @@ def _print(proof):
     print(f"  accord    {proof['agreement_rate']:.1%} sur les {proof['n_distinct_replaced']} textes distincts "
           f"remplacés ({proof['n_replaced']} appels : {proof['matched_by_rules']} par règles, "
           f"{proof['sent_to_fallback']} par secours)")
-    print(f"  couvert   {proof['rules_coverage']:.0%} des entrées sans aucun modèle ; "
-          f"{n - proof['n_replaced']} restent sur l'appel d'origine")
+    print(f"  couvert   {proof['rules_coverage']:.0%} des {proof['n_billed']} appels du groupe sans aucun "
+          "modèle (économies comptées par appel, jumeaux compris)")
     if proof['cost_factor']:
         print(f"  coût      {proof['cost_before_month_usd']} → {proof['cost_after_month_usd']} "
               f"USD/mois  (/{proof['cost_factor']})")

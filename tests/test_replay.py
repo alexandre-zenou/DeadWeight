@@ -314,3 +314,17 @@ def test_une_seule_reponse_sur_trop_peu_de_textes_est_non_conclu():
     proof = replay(_finding(events), events, rules)
     assert proof['verdict'] == 'inconclusive'
     assert any('une seule réponse' in r for r in proof['reasons'])
+
+
+def test_les_economies_comptent_tous_les_appels_du_groupe_jumeaux_compris():
+    # ADR 0002 : l'accord écarte l'exemple d'extraction et ses jumeaux, pas les économies. 30 textes
+    # couverts, 1 exemple + 29 jumeaux couverts, 40 textes non couverts : 40 appels sur 100 restent facturés
+    couverts = _events(30)
+    jumeaux = _avec_textes([{**e, 'event_id': f'j{i}'} for i, e in enumerate(_events(30))],
+                           [f'Bonjour, gagnez un iphone gratuit ! {i}' for i in range(30)])
+    restants = [{**e, 'event_id': f'u{i}'} for i, e in enumerate(_events(40, text='une question'))]
+    events = couverts + jumeaux + restants
+    proof = replay(_finding(events, samples=['j0']), events, RULES)
+    assert proof['n_replayed'] == 70 and proof['n_excluded_twins'] == 29
+    assert proof['rules_coverage'] == pytest.approx(60 / 100, abs=1e-4)
+    assert proof['cost_after_month_usd'] == pytest.approx(proof['cost_before_month_usd'] * 40 / 100, rel=1e-3)

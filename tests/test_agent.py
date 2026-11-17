@@ -50,7 +50,7 @@ class ScriptedLLM:
                                                                                 "completion_tokens": 100}
 
 
-def happy_script(first_plan_justification="Accord de 100.0 % au rejeu, coût divisé par 2.0."):
+def happy_script(first_plan_justification="Accord de 100.0 % au rejeu, coût divisé par 3.7."):
     return [
         ("Je commence par la vue d'ensemble.", [call("vue_ensemble")]),
         (None, [call("lancer_regles")]),
@@ -67,7 +67,7 @@ def test_agent_investigates_proves_and_publishes_a_plan():
     assert [j["outil"] for j in result["journal"]] == ["vue_ensemble", "lancer_regles", "prouver", "prouver",
                                                        "publier_plan"]
     proof = result["journal"][2]["resultat"]
-    assert proof["verdict"] == "pass" and proof["accord_pct"] == 100.0 and proof["facteur_cout"] == 2.0
+    assert proof["verdict"] == "pass" and proof["accord_pct"] == 100.0 and proof["facteur_cout"] == 3.7
     assert result["cout_audit_usd"] > 0  # 4 appels au modèle, prix gpt-5-mini du catalogue
 
 
