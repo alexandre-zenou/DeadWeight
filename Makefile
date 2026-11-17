@@ -3,7 +3,7 @@ PY := $(shell command -v python3.11 || command -v python3)
 VENV := .venv
 BIN := $(VENV)/bin
 
-.PHONY: dev install test lint record audit audit-complet demo prices e2e catalog tester demo-video
+.PHONY: dev install test lint record dataset-v2 audit audit-complet demo prices e2e catalog tester demo-video
 
 dev: install .env.local
 	@set -a; . ./.env.local; set +a; \
@@ -31,6 +31,10 @@ lint: install
 # appelle les vraies API une fois et ecrit tests/cassettes/ (cles de .env.local, jamais ecrites)
 record: install .env.local
 	@set -a; . ./.env.local; set +a; $(BIN)/python -m pytest -q --record-mode=once
+
+# jeu de test v2 (#5) : une seule fois, quelques centimes (OPENAI_API_KEY de .env.local) ; jamais en CI
+dataset-v2: install .env.local
+	@set -a; . ./.env.local; set +a; $(BIN)/python fixtures/dataset/gen_dataset_v2.py
 
 # Même configuration que make dev ; export temporaire supprimé après le rapport.
 AUDIT_OUT ?= out/audit.html

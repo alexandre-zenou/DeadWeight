@@ -408,6 +408,7 @@ Tes clés vont dans `.env.local` (jamais commité). Personne ne tape `export`.
     make test      # tests, sans réseau ni clé : les réponses fournisseurs sont rejouées
     make lint      # ruff, sur gateway/ rules/ report/ tests/ scripts/
     make record    # appelle les vraies API une fois et écrit tests/cassettes/
+    make dataset-v2  # écrit le jeu de test v2 (300 tickets + réponses de gpt-4o-mini), une seule fois
 
 Un test qui parle à un fournisseur se marque `@pytest.mark.vcr` : il rejoue sa cassette
 dans `tests/cassettes/`. Les clés sont retirées avant l'écriture (voir `tests/conftest.py`).
