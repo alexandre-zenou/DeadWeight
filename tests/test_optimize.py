@@ -86,6 +86,20 @@ def test_demo_mode_and_dev_page_show_everything(proposals):
     assert page.count('class="card"') == len(proposals) and "Refusée" in page and "Non testée" in page
 
 
+def test_inconclusive_proposal_has_its_own_label_and_is_not_counted_as_proven(proposals):
+    """ADR 0002 : « non conclu » n'est ni prouvé ni refusé ; il ne compte pas dans les gains."""
+    from optimize.devpage import render
+    triage = next(p for p in proposals if p["type"] == "regles" and p["app_id"] == "mail-triage")
+    fake = {**triage, "verdict": "inconclusive", "raisons": ["trop peu de textes distincts (3 sur 20)"]}
+    page = render([fake])
+    assert "Non conclue" in page and "Prouvée" not in page and "0 prouvée sur 1" in page
+    demo = message([fake], show_all=True)
+    assert "❔ *mail-triage*" in demo and "trop peu de textes distincts" in demo and "✅ *" not in demo
+    assert "0 optimisation prouvée" in demo
+    hidden = message([triage, fake]).replace(LEGEND, "")
+    assert "1 non conclue, 0 rejetée" in hidden
+
+
 def _repo(tmp_path):
     repo = tmp_path / "client"
     repo.mkdir()

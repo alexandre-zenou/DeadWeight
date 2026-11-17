@@ -69,7 +69,8 @@ SPECS = [
                                  "coût recalculé sur le trafic observé. Ce sont des pistes non prouvées.",
           {"finding_id": {"type": "string"}}, ["finding_id"]),
     _spec("prouver", "Pour un constat « répond toujours la même chose » : extrait des règles fixes puis les rejoue "
-                     "sur l'historique. Rend le taux d'accord, le verdict (seuil 95 %) et le coût avant/après.",
+                     "sur l'historique. Rend le taux d'accord, le verdict (seuil 95 % ; « inconclusive » = trop "
+                     "peu de textes distincts pour trancher, pas prouvé) et le coût avant/après.",
           {"finding_id": {"type": "string"}}, ["finding_id"]),
     {"name": "publier_plan", "description": "Termine l'audit : plan d'action priorisé. Chaque chiffre cité doit venir d'un résultat d'outil.",
      "parameters": {"type": "object", "properties": {
@@ -197,7 +198,8 @@ class AuditTools:
         proof = self.proofs.get(finding_id)
         if proof is None:
             return "piste à vérifier"
-        return "prouvé par rejeu" if proof["verdict"] == "pass" else "rejeu refusé"
+        # « non conclu » (ADR 0002) : trop peu de textes distincts ; pas prouvé, et le statut ne le dit jamais
+        return {"pass": "prouvé par rejeu", "inconclusive": "rejeu non conclu"}.get(proof["verdict"], "rejeu refusé")
 
     def call(self, name, args):
         """Exécute un outil (sauf publier_plan, traité par la boucle). Jamais d'exception vers l'agent."""

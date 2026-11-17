@@ -32,7 +32,8 @@ def _mesure_text(p, key, v):
     return f"{prefix}{_fmt(v['valeur'], v['unite'], key in LEVELS)}"
 
 
-LEGEND = "_Légende : ✅ gain prouvé par rejeu · ◻️ piste non testée · ⛔ piste rejetée (précision insuffisante)_"
+LEGEND = ("_Légende : ✅ gain prouvé par rejeu · ◻️ piste non testée · ⛔ piste rejetée (précision insuffisante)"
+          " · ❔ non conclu (trop peu de textes distincts pour trancher)_")
 
 
 def quoi_changer(p):
@@ -56,7 +57,7 @@ def quoi_changer(p):
 
 def _line(p, link, total_spent=None, equivalent_api=False, kind=None):
     m = p["mesures"]
-    icon = {"pass": "✅", "reject": "⛔", "non_teste": "◻️"}.get(p["verdict"], "•")
+    icon = {"pass": "✅", "reject": "⛔", "inconclusive": "❔", "non_teste": "◻️"}.get(p["verdict"], "•")
     parts = []
     # ordre imposé : contexte envoyé, coût, latence médiane, précision (D2.6, Problème 2) ; les deux
     # figures restantes (latence p95, jetons de sortie) suivent, en détail secondaire.
@@ -75,7 +76,7 @@ def _line(p, link, total_spent=None, equivalent_api=False, kind=None):
             and cout.get("avant") is not None and cout.get("apres") is not None):
         share = f", soit {(cout['avant'] - cout['apres']) / total_spent * 100:.0f} % {TOTAL[equivalent_api]}"
     pr = f" → <{link}|accepter la PR>" if link and p["verdict"] == "pass" else ""
-    why = f" ({'; '.join(p['raisons'])})" if p["verdict"] == "reject" and p.get("raisons") else ""
+    why = f" ({'; '.join(p['raisons'])})" if p["verdict"] in ("reject", "inconclusive") and p.get("raisons") else ""
     how = (conseil_proposition(p, kind) or quoi_changer(p)) if p["verdict"] == "pass" else None
     if how and kind == "logs" and not conseil_proposition(p, kind) and p["type"] in ("plafond", "cache_prompt"):
         how = None  # réglage SDK sans équivalent dans Claude Code : mieux vaut ne rien dire que mal conseiller
@@ -157,9 +158,11 @@ def message(proposals, links=None, total_spent=None, show_all=False, equivalent_
     body = [_line(p, links.get(p["finding_id"] + p["type"]), total_spent, equivalent_api, kind) for p in shown]
     hidden = len(proposals) - len(shown)
     if hidden:
-        untested = sum(p["verdict"] == "non_teste" for p in proposals if p not in shown)
+        rest = [p["verdict"] for p in proposals if p not in shown]
+        counts = [(rest.count("non_teste"), "non testée"), (rest.count("inconclusive"), "non conclue"),
+                  (len(rest) - rest.count("non_teste") - rest.count("inconclusive"), "rejetée")]
+        parts = ", ".join(f"{n} {label}{'s' if n > 1 else ''}" for n, label in counts if n or label != "non conclue")
         body.append(f"_{hidden} autre{'s' if hidden > 1 else ''} piste{'s' if hidden > 1 else ''} : "
-                    f"{untested} non testée{'s' if untested > 1 else ''}, {hidden - untested} rejetée"
-                    f"{'s' if hidden - untested > 1 else ''} ; détail dans la page développeur._")
+                    f"{parts} ; détail dans la page développeur._")
     foot = "_Mesuré = rejeu des mêmes entrées sur votre historique. ~ = estimation, jamais additionnée._"
     return "\n".join(head[:1] + [LEGEND] + head[1:] + [""] + body + ["", foot])

@@ -22,7 +22,7 @@ from report.pourquoi import diagnostic, lignes, utile
 from report.conseils import conseil_logs
 from report import audit_vue
 from report.regroupe import nom_workflow, parents
-from report.fmt import ms as _ms, usd as _usd
+from report.fmt import ms as _ms, usd as _usd, verdict as _verdict
 from report.cost import (MIN_WINDOW_SECONDS, MONTH_SECONDS, chiffrer_partiel, more_data_hint, runs,
                          source_kind, window_seconds)
 
@@ -385,7 +385,7 @@ def _card(c, global_reasons=()):
     proof = c.get("preuve_agent")
     if proof:
         how = {"llm": "règles extraites par IA", "offline": "règles extraites sans IA"}.get(proof.get("methode"), "")
-        notes.append(f"Rejoué par l'agent auditeur : {proof['verdict'].upper()}, {proof['accord_pct']:g} % d'accord"
+        notes.append(f"Rejoué par l'agent auditeur : {_verdict(proof['verdict'])}, {proof['accord_pct']:g} % d'accord"
                      + (f" ({how})." if how else "."))
     elif not c["prouve"]:
         notes.append("Constat statistique, pas encore vérifié par rejeu.")
@@ -435,7 +435,7 @@ def _agent_section(agent):
     steps = "".join(
         f"<li>L'agent {e(_step_text(j))}"
         + (f" — <i>{e(j['pensee'])}</i>" if j.get("pensee") else "")
-        + (f" (verdict : {e(j['resultat']['verdict'])}, accord {e(str(j['resultat']['accord_pct']))} %)"
+        + (f" (verdict : {e(_verdict(j['resultat']['verdict']))}, accord {e(str(j['resultat']['accord_pct']))} %)"
            if j["outil"] == "prouver" and "verdict" in j["resultat"] else "")
         + "</li>" for j in agent["journal"])
     cost = agent.get("cout_audit_usd")

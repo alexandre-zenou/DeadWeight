@@ -6,7 +6,7 @@ Les chiffres viennent de report.regroupe (vue regroupée des mêmes constats) ; 
 import html
 import re
 
-from report.fmt import ms, usd
+from report.fmt import ms, usd, verdict
 from report.regroupe import actions, groupes, nom_workflow, par_workflow
 
 TOP_TABLE = 5       # workflows montrés par carte de problème
@@ -105,7 +105,7 @@ def _notes(items, global_reasons, shared_reason):
         p = c["preuve_agent"]
         how = {"llm": "règles extraites par IA", "offline": "règles extraites sans IA"}.get(p.get("methode"), "")
         where = f" Workflow : {nom_workflow(c['app_id'])}." if len(items) > 1 else ""
-        out.append(f"Rejoué par l'agent auditeur : {p['verdict'].upper()}, {p['accord_pct']:g} % d'accord"
+        out.append(f"Rejoué par l'agent auditeur : {verdict(p['verdict'])}, {p['accord_pct']:g} % d'accord"
                    + (f" ({how})." if how else ".") + where)
     if len(proofs) < len(items) and not all(c["prouve"] for c in items):
         out.append("Constat statistique, pas encore vérifié par rejeu.")

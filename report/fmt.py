@@ -1,4 +1,4 @@
-"""Formats d'affichage partagés par les rapports (dollars, durées)."""
+"""Formats d'affichage partagés par les rapports (dollars, durées, verdicts)."""
 
 
 def usd(v):
@@ -13,3 +13,8 @@ def usd(v):
 def ms(v):
     """0 ms = latence non rapportée par la source (journaux, import) : on ne l'affiche pas comme une mesure."""
     return "non mesuré" if not v else f"{v / 1000:.1f} s" if v >= 1000 else f"{v:.0f} ms"
+
+
+def verdict(v):
+    """Verdict d'une preuve pour le rapport. « non conclu » (ADR 0002) n'est pas prouvé : jamais « PASS »."""
+    return {"inconclusive": "NON CONCLU"}.get(v, str(v).upper())

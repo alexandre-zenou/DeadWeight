@@ -157,6 +157,23 @@ def test_pass_and_reject_proofs_match_the_contract(dataset):
         jsonschema.validate(replay(finding, events, extract_rules(finding, events)), PROOF_SCHEMA)
 
 
+def test_inconclusive_proof_matches_the_contract(dataset):
+    """ADR 0002 : trop peu de textes distincts → « non conclu », avec n_distinct et memorized_rules (facultatifs)."""
+    events, findings = dataset
+    finding = findings['reviews']
+    proof = replay(finding, events, extract_rules(finding, events))
+    jsonschema.validate({**proof, 'verdict': 'inconclusive', 'n_distinct': 3,
+                         'memorized_rules': [
+                             {'category': 'positif', 'alternative': 'merci pour votre commande',
+                              'example': 'Merci pour votre commande, tout est parfait !'},
+                             {'category': 'negatif', 'alternative': 'colis jamais arrivé'}]}, PROOF_SCHEMA)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**proof, 'verdict': 'peut-etre'}, PROOF_SCHEMA)
+    for bad in (['merci pour votre commande'], [{'category': 'positif'}]):  # objet, et alternative obligatoire
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**proof, 'memorized_rules': bad}, PROOF_SCHEMA)
+
+
 def test_jeu_de_test_a_une_seule_reponse_rien_n_est_prouve():
     # vu chez un testeur : tous les « true » servent à apprendre, il ne reste que des « false » à
     # vérifier ; une règle qui répond toujours « false » ferait 100 % sans rien prouver

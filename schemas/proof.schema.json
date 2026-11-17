@@ -25,7 +25,37 @@
       "type": "integer"
     },
     "agreement_rate": {
+      "description": "Part des textes distincts où les règles rendent la même réponse que le modèle : un groupe de jumeaux compte pour une voix (ADR 0002). Les économies, elles, se comptent par appel.",
       "type": "number"
+    },
+    "n_distinct": {
+      "description": "Nombre de textes distincts rejoués (jumeaux des exemples d'extraction exclus). Facultatif.",
+      "type": "integer"
+    },
+    "memorized_rules": {
+      "description": "Règles qui ressemblent à du par-cœur (phrase entière recopiée) : signalées, pas interdites. Facultatif.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "category",
+          "alternative"
+        ],
+        "properties": {
+          "category": {
+            "description": "Catégorie de la règle (la réponse qu'elle rend).",
+            "type": "string"
+          },
+          "alternative": {
+            "description": "L'alternative signalée : quatre mots ou plus, ou copie d'un exemple d'extraction entier.",
+            "type": "string"
+          },
+          "example": {
+            "description": "L'exemple d'extraction recopié, présent seulement quand l'alternative en recopie un entier.",
+            "type": "string"
+          }
+        }
+      }
     },
     "disagreements": {
       "type": "array",
@@ -55,10 +85,12 @@
       "type": "number"
     },
     "verdict": {
+      "description": "pass = prouvé ; reject = refusé ; inconclusive = non conclu (trop peu de textes distincts pour trancher : pas prouvé, pas un échec des règles).",
       "type": "string",
       "enum": [
         "pass",
-        "reject"
+        "reject",
+        "inconclusive"
       ]
     }
   }
