@@ -2,15 +2,11 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from agent.audit import audit
 from agent.loop import run_agent, unknown_numbers
 from agent.tools import AuditTools
 from report.audit import render_html
 
-# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
-pytestmark = pytest.mark.usefixtures("minimum_v1")
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = [json.loads(line) for line in (ROOT / "fixtures/dataset/v1/events.jsonl").read_text().splitlines()
