@@ -195,3 +195,14 @@ def test_models_refusing_temperature_are_retried_without_it(monkeypatch):
     result = llm.complete([{'role': 'user', 'content': 'x'}])
     assert result.content == 'spam' and result.error is None
     assert 'temperature' in sent[0] and 'temperature' not in sent[1]
+
+
+def test_rank_places_inconclusive_after_reject_and_before_not_tested(echo_server, fixed_server):
+    """« non conclu » (ADR 0002) n'est pas prouvé : jamais devant un « pass »."""
+    from dataclasses import replace
+    good = run_candidate(_candidate(echo_server), _cases(40), 'classification')
+    bad = run_candidate(_candidate(fixed_server), _cases(40), 'classification')
+    empty = run_candidate(_candidate(echo_server, kind='ollama'), [], 'classification')
+    unsure = replace(good, verdict='inconclusive')
+    ranked = rank([unsure, empty, bad, good])
+    assert [r.verdict for r in ranked] == ['pass', 'reject', 'inconclusive', 'not_tested']

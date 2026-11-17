@@ -277,6 +277,10 @@ def _print(proof):
     print(f"  latence   p95 {proof['p95_before_ms']} ms → {proof['p95_after_ms']} ms, mesurée")
     if proof['verdict'] == 'pass':
         print(f"  VERDICT   PASS  (seuil {proof['threshold']:.0%})")
+    elif proof['verdict'] == 'inconclusive':  # ADR 0002 : pas prouvé, pas refusé non plus
+        print("  VERDICT   NON CONCLU : on ne propose pas ce remplacement (trop peu de textes distincts)")
+        for reason in proof['reasons']:
+            print(f"            - {reason}")
     else:
         print(f"  VERDICT   REJECT : on ne propose pas ce remplacement (seuil {proof['threshold']:.0%})")
         for reason in proof['reasons']:

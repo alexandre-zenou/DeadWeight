@@ -1,8 +1,8 @@
 """D4.3 — Mode miroir : mesurer en production les règles, sans jamais les appliquer.
 
 Désactivé par défaut. GATEWAY_MIRROR pointe vers un fichier proof-*.json ou un dossier
-(sortie de `python3 -m proof.replay`), preuves PASS **et** REJECT : une règle refusée au
-rejeu est justement ce qu'on veut continuer d'observer sur le trafic réel.
+(sortie de `python3 -m proof.replay`), preuves PASS, REJECT **et** NON CONCLU : une règle refusée
+ou non conclue au rejeu est justement ce qu'on veut continuer d'observer sur le trafic réel.
 
 Pour chaque appel capturé (OpenAI, Anthropic ou Gemini) qui tombe dans le groupe d'une preuve (application ×
 modèle × gabarit, comme le court-circuit), on calcule ce que les règles auraient répondu
@@ -73,7 +73,8 @@ class Mirror:
 
 
 def load(path):
-    return shortcircuit.load(path, verdicts=("pass", "reject"))
+    # « non conclu » (ADR 0002) : trop peu de textes distincts ; le trafic réel en apporte d'autres.
+    return shortcircuit.load(path, verdicts=("pass", "reject", "inconclusive"))
 
 
 def stats(records):

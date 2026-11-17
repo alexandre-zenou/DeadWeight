@@ -106,3 +106,11 @@ def test_stats_cli(proofs, tmp_path, capsys):
     assert mirror.main(["stats", "--log", str(log)]) == 0
     out = capsys.readouterr().out
     assert "mail-triage" in out and "prêt pour le court-circuit" in out
+
+
+def test_inconclusive_proofs_are_watched_too(proofs, tmp_path):
+    """Un constat « non conclu » manque de textes distincts : le miroir est fait pour en observer d'autres."""
+    passed = json.loads(next(f for f in proofs.glob("proof-*.json")
+                             if json.loads(f.read_text())["verdict"] == "pass").read_text())
+    (tmp_path / "proof-x.json").write_text(json.dumps({**passed, "verdict": "inconclusive"}))
+    assert [k[0] for k in mirror.load(tmp_path)] == ["mail-triage"]

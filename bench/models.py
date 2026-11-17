@@ -45,5 +45,5 @@ class CandidateResult:
     latency_p50_ms: Optional[float]
     latency_p95_ms: Optional[float]
     cost_per_1000_calls_usd: Optional[float]
-    verdict: str  # pass | reject | not_tested
+    verdict: str  # pass | reject | not_tested (lecteurs prêts pour inconclusive, ADR 0002)
     reasons: tuple

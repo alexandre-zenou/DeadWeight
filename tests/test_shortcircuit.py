@@ -116,3 +116,12 @@ def test_disabled_by_default(monkeypatch):
     monkeypatch.delenv("GATEWAY_SHORTCIRCUIT", raising=False)
     from gateway.proxy import SHORTCUT
     assert make_app(upstream="http://127.0.0.1:9")[SHORTCUT] == {}
+
+
+def test_inconclusive_proof_never_short_circuits(proofs, tmp_path):
+    """ADR 0002 : « non conclu » n'est pas prouvé ; la passerelle ne remplace jamais l'appel."""
+    from gateway import shortcircuit
+    passed = json.loads(next(f for f in proofs.glob("proof-*.json")
+                             if json.loads(f.read_text())["verdict"] == "pass").read_text())
+    (tmp_path / "proof-x.json").write_text(json.dumps({**passed, "verdict": "inconclusive"}))
+    assert shortcircuit.load(tmp_path) == {}

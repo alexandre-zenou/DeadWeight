@@ -3,14 +3,20 @@ from bench.pricing import cost_per_1000_calls
 
 
 def rank(results):
-    """pass d'abord (meilleur score, puis moins cher), puis reject, puis not_tested."""
-    order = {'pass': 0, 'reject': 1, 'not_tested': 2}
+    """pass d'abord (meilleur score, puis moins cher), puis reject, puis inconclusive, puis not_tested.
+    « non conclu » (ADR 0002) n'est pas prouvé : jamais devant un pass."""
+    order = {'pass': 0, 'reject': 1, 'inconclusive': 2, 'not_tested': 3}
 
     def key(result):
         cost = result.cost_per_1000_calls_usd
         return (order[result.verdict], -(result.score or 0.0), cost if cost is not None else float('inf'))
 
     return sorted(results, key=key)
+
+
+def label(verdict):
+    """Libellé console d'un verdict du banc : « non conclu » (ADR 0002) plutôt que le code brut."""
+    return {'inconclusive': 'non conclu'}.get(verdict, verdict)
 
 
 def to_dict(result):
