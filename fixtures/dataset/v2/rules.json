@@ -1,0 +1,56 @@
+{
+  "spam-checker": {
+    "categories": [
+      {
+        "key": "no spam",
+        "regex": "\\b(comptabilit(?:é|e)|probl[eè]me[rs]? d('|’)?acc[eè]s|probl[eè]me de facturation|soucis?|bug|export|api|application mobile|connexion|probl[eè]mes techniques|demande d'assistance|partenariat|probl[eè]me de paiement|double authentification|réinitialisation|sujet urgent)\\b"
+      },
+      {
+        "key": "spam",
+        "regex": "\\b(facture impay[ée]|relance facture|rappel facture|paiement en retard|p[ée]nalit[ée]s de retard|impay[ée]|rappel automatique|exig[eé]ons|urgent|probl[eè]me de connexion bloqu[eé]|notification|acc[eè]s suspendu|souci technique|probl[eè]me crucial|exig[eé]ons|revendication de paiement|probl[eè]me de paiement en retard|facturation incorrecte|probl[eè]me d'acc[eè]s au compte|probl[eè]me avec double authentification|facture non r[eè]gl[eée]|souhaite un remboursement|poursuites judiciaires?)\\b"
+      },
+      {
+        "key": "not spam",
+        "regex": "\\b(probl[eè]me technique|souci technique|demande d'aide|probl[eè]me d'export|urgence technique|erreur application|sujet technique|soucis techniques|problèmatique d'exportation|problème de performance|bloqu[eé] sur chargement|message d'erreur|probl[eè]me dans l'application|bloqu[eé] sur l'?écran)\\b"
+      }
+    ],
+    "coverage": 0.5769230769230769,
+    "method": "llm",
+    "reasoning": "Les exemples de texte classifiant en 'spam' contiennent fréquemment des mots liés aux factures impayées, rappels, relances, pénalités, notifications formelles, exigences et problèmes d'accès bloqué ou suspendu, souvent avec un ton urgent ou revendicatif. Les textes 'no spam' montrent souvent des plaintes ou demandes d'assistance techniques, des questions liées à des problèmes de facturation, accès ou API, mais restent dans un contexte plus neutre ou explicatif. Les exemples 'not spam' sont rares mais associés à des problèmes techniques ou urgences dans l'usage de l'application, sans connotation financière ou formelle de relance. La première regex (no spam) capture la majorité des cas techniques ou facturation non agressifs. La deuxième (spam) capte les relances, menaces et rappels. La troisième (not spam) correspond aux problèmes techniques spécifiques urgents. L'ordre par fréquence est suggéré par la distribution observée dans les outputs.",
+    "gabarit": {
+      "prefixe": "",
+      "suffixe": ""
+    }
+  },
+  "support-ticket-triage": {
+    "categories": [
+      {
+        "key": "technical",
+        "regex": "\\bexport\\b|\\bapi\\b|\\bbug\\b|\\blenteur\\b|\\bcharg(e|ement)\\b|\\bconnexion\\b|\\berreur\\b|\\bplant(e|age)\\b|\\blibell(e|é)\\b|\\blenteur\\b|\\bi(n|m)tegration\\b|\\bserveur\\b|\\bcod(e|ification)\\b|\\bloc(k|age)\\b"
+      },
+      {
+        "key": "billing",
+        "regex": "\\bfactur(e|ation)\\b|\\bpaiement\\b|\\béchéance\\b|\\bréglé\\b|\\bprélèvement\\b|\\bdû\\b|\\brembours(e|ement)\\b|\\bimpayé\\b|\\bmontant\\b|\\brappel\\b|\\bpénalité\\b|\\bchèque\\b|\\bconfirmation.*paiement\\b|\\bpaiement\\s+double\\b|\\bpaiements\\b|\\bcompte.*bloqu(e|age|er)\\b"
+      },
+      {
+        "key": "account",
+        "regex": "\\bcompte\\b|\\baccès\\b|\\bconnect(e|ion)\\b|\\bmot de passe\\b|\\bréinitialis(er|ation)\\b|\\bdouble authentification\\b|\\bcod(e|ification)\\b|\\bidentifiant\\b|\\blogin\\b|\\badresse e-mail?\\b|\\becueil\\b|\\butilisateurs?\\b|\\bprofil\\b|\\baccès aux services\\b|\\bconnexion refusée\\b|\\bsession\\b|\\bcompte.*bloqu(e|age|er)\\b|\\baccès.*droit\\b"
+      },
+      {
+        "key": "other",
+        "regex": "\\bpartenariat\\b|\\bcollaborat(ion|e|if)\\b|\\bprojet\\b|\\bdevis\\b|\\binscription\\b|\\bfeature\\b|\\bquestion\\b|\\binfo\\b|\\busage\\b|\\bsoutien\\b|\\bbienvenue\\b|\\bourriez-vous|\\bmise à jour\\b|\\borganisation\\b|\\bsenior\\b|\\batelier\\b|\\bnewsletter\\b|\\bsugg(est(ion|ions))\\b|\\brisque?\\b|\\bsimple\\b|\\blancement\\b|\\bdémarrage\\b|\\bprésentation\\b|\\bcollaboration\\b|\\bproposition\\b|\\bcontact\\b|\\binstallation\\b|\\bdémonstration\\b|\\butilisateur\\b|\\bformation\\b|\\bannonce\\b|\\bevenement\\b|\\binvitation\\b|\\borganisat(ion|eur)\\b|\\bpubli(cité|promotion)\\b|\\bconférence\\b|\\boffre\\b"
+      },
+      {
+        "key": "autre",
+        "regex": "\\binadmissible\\b|\\bexigeons\\b|\\bexplications?\\b|\\bjamais répondu\\b"
+      }
+    ],
+    "coverage": 0.7755102040816326,
+    "method": "llm",
+    "reasoning": "Les catégories ont été définies selon les fréquences observées dans les données fournies. Pour la catégorie 'technical', les textes contiennent fréquemment des mots liés aux problèmes techniques tels que \"export\", \"API\", \"bug\", \"lenteur\", \"connexion\", \"erreur\" et d'autres termes techniques typiques. Pour 'billing', les expressions sont centrées sur la facturation, paiement, échéance, montant, facture, etc. La catégorie 'account' regroupe les demandes liées à l'accès au compte utilisateur, incluant mots-clés comme \"compte\", \"mot de passe\", \"réinitialisation\", \"double authentification\". La catégorie 'other' rassemble les cas non techniques ni liés à la facturation ou accès, souvent des questions autour de partenariat, collaboration, projet, devis, inscriptions ou suggestions. Enfin, une catégorie 'autre' spécifique est dédiée à l'exemple unique très agressif et exprimant une plainte forte, avec des mots comme \"inadmissible\", \"exigeons\", \"jamais répondu\", justifiant une catégorie spécifique à part. Chaque regex est formulée pour matche insensible à la casse sur des termes entiers afin de garantir la bonne classification selon les exemples observés. L'ordre des catégories est en fonction de leur fréquence décroissante dans les données.",
+    "gabarit": {
+      "prefixe": "Classe ce ticket parmi billing, technical, account, other. Reponds uniquement par le mot.\n\nTicket: ",
+      "suffixe": ""
+    }
+  }
+}
