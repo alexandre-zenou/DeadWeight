@@ -71,3 +71,26 @@ une nouvelle recherche. Les verdicts de `systematic-review` restent exclusivemen
 R18 : `heavy-harness` répète 24 fois des instructions dominantes avec du cache actif ;
 `lean-harness` garde des instructions légères. Le coût fixe est borné selon la part
 déjà cachée ; ce coût ne constitue pas une économie intégralement réalisable.
+
+## Jeu v2 : tickets variés (#5)
+
+`v2/tickets.jsonl` : environ 300 tickets de support en français, écrits une fois par un LLM à partir de fiches
+tirées au hasard (intention, auteur, ton, longueur, particularité ; graine fixe, fiche gardée dans chaque ticket),
+dont près d'un cinquième de messages envoyés par des machines. `v2/events.jsonl` : chaque ticket passé une fois dans
+gpt-4o-mini, le **modèle d'origine**, sous les deux consignes des workflows de test, au format d'événement commun :
+
+| `app_id` | Consigne | `event_id` |
+|---|---|---|
+| `support-ticket-triage` | `workflows/support-ticket-triage.json` (billing, technical, account, other) | `v2_<ticket>_tri` |
+| `spam-checker` | nœud « Spam checker » de `workflows/my-workflow.json` (spam ou pas ; « Subject: … », « From: … » et corps collés, comme le nœud Gmail les rend) | `v2_<ticket>_spam` |
+
+Les réponses sont gardées telles quelles (« Billing. », « not spam »…) : les règles visent la réponse du modèle
+d'origine, y compris ses erreurs (ADR 0001).
+
+Générer : `make dataset-v2` (clé OpenAI dans `.env.local`, quelques centimes). Ce n'est **pas** déterministe (appels
+réels) ; chaque réponse est écrite aussitôt reçue, une relance après interruption ne repaie que ce qui manque. La CI ne l'appelle jamais : les tests
+(`tests/test_dataset_v2.py`) lisent le jeu enregistré. À la fin, le script affiche les contrôles : aucun **jumeau**,
+longueurs variées (chaque tranche court < 25 mots, moyen, long > 80 mots ≥ 15 %), les quatre catégories présentes dans
+les réponses du tri, aucun début ni fin de trois mots dans plus de 10 % des tickets.
+
+La v1 et `gen_dataset.py` sont inchangés.
