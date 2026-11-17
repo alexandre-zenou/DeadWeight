@@ -36,7 +36,25 @@
       "description": "Règles qui ressemblent à du par-cœur (phrase entière recopiée) : signalées, pas interdites. Facultatif.",
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "object",
+        "required": [
+          "category",
+          "alternative"
+        ],
+        "properties": {
+          "category": {
+            "description": "Catégorie de la règle (la réponse qu'elle rend).",
+            "type": "string"
+          },
+          "alternative": {
+            "description": "L'alternative signalée : quatre mots ou plus, ou copie d'un exemple d'extraction entier.",
+            "type": "string"
+          },
+          "example": {
+            "description": "L'exemple d'extraction recopié, présent seulement quand l'alternative en recopie un entier.",
+            "type": "string"
+          }
+        }
       }
     },
     "disagreements": {
