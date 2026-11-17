@@ -184,6 +184,15 @@ def test_reasoning_maps_a_bench_not_tested_verdict_to_non_teste():
     assert p["mesures"]["precision"] == {"valeur": None, "statut": NON_TESTE, "unite": "%"}
 
 
+def test_reasoning_keeps_a_bench_inconclusive_verdict_as_not_proven():
+    """« non conclu » (ADR 0002) : ni « pass » (rien n'est prouvé) ni « reject » (rien n'est réfuté)."""
+    proposals = propose(DATASET, keys_available=True,
+                        prove_reasoning=_fake_prove("inconclusive", 1.0, reasons=["trop peu de textes distincts"]))
+    p = by(proposals, "raisonnement", "trivia-bot")
+    assert p["verdict"] == "inconclusive"
+    assert "trop peu de textes distincts" in p["raisons"]
+
+
 # ---------- couverture d'ensemble ----------
 
 def test_propose_wires_all_five_new_levers_on_the_fixture_dataset(proposals):

@@ -20,7 +20,8 @@ RESOLVED = "deadweight-rules"
 
 def load(path, verdicts=("pass",)):
     """{(app_id, model, template): (finding_id, route)} depuis les preuves PASS.
-    Le mode miroir (D4.3) charge aussi les REJECT : il sert justement à les observer."""
+    « non conclu » (ADR 0002) n'est pas prouvé : jamais chargé ici, l'appel part toujours chez le modèle.
+    Le mode miroir (D4.3) charge aussi les REJECT et les non conclus : il sert justement à les observer."""
     path = Path(path)
     files = sorted(path.glob("proof-*.json")) if path.is_dir() else [path]
     table = {}

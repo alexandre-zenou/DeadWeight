@@ -19,7 +19,9 @@ function loadJSON(filename) {
 
 // ---- C2 : construction du message Block Kit ----
 function buildReviewMessage(finding, proof) {
-  const verdictEmoji = proof.verdict === 'pass' ? '✅' : '❌';
+  // « non conclu » (ADR 0002) : trop peu de textes distincts ; pas prouvé, donc pas de bouton « Appliquer ».
+  const verdictEmoji = { pass: '✅', inconclusive: '❔' }[proof.verdict] ?? '❌';
+  const verdictLabel = { inconclusive: 'non conclu' }[proof.verdict] ?? proof.verdict;
   const savingEur = finding.est_saving_month_eur?.toFixed(0) ?? '?';
 
   return {
@@ -40,7 +42,7 @@ function buildReviewMessage(finding, proof) {
       {
         type: 'section',
         fields: [
-          { type: 'mrkdwn', text: `*Verdict:*\n${verdictEmoji} ${proof.verdict}` },
+          { type: 'mrkdwn', text: `*Verdict:*\n${verdictEmoji} ${verdictLabel}` },
           { type: 'mrkdwn', text: `*Accord:*\n${(proof.agreement_rate * 100).toFixed(1)}%` },
           { type: 'mrkdwn', text: `*Coût:*\n${proof.cost_factor}x moins cher` },
           { type: 'mrkdwn', text: `*Latence p95:*\n${proof.p95_before_ms}ms → ${proof.p95_after_ms}ms` },
@@ -53,25 +55,28 @@ function buildReviewMessage(finding, proof) {
           text: `💰 Économie estimée : *${savingEur}€/mois*`,
         },
       },
-      {
-        type: 'actions',
-        block_id: 'review_actions',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '✅ Appliquer' },
-            action_id: 'apply_patch',
-            value: finding.finding_id,
-            style: 'primary',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '❌ Ignorer' },
-            action_id: 'ignore_patch',
-            value: finding.finding_id,
-          },
-        ],
-      },
+      // seul un verdict « pass » propose « Appliquer » (non conclu, refusé : rien à appliquer)
+      ...(proof.verdict === 'pass' ? [
+        {
+          type: 'actions',
+          block_id: 'review_actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '✅ Appliquer' },
+              action_id: 'apply_patch',
+              value: finding.finding_id,
+              style: 'primary',
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '❌ Ignorer' },
+              action_id: 'ignore_patch',
+              value: finding.finding_id,
+            },
+          ],
+        },
+      ] : []),
     ],
   };
 }
@@ -135,7 +140,11 @@ app.post('/slack/interactions', async (req, res) => {
 
     let replyMessage;
 
-    if (action.action_id === 'apply_patch') {
+    if (action.action_id === 'apply_patch' && loadJSON('proof.json').verdict !== 'pass') {
+      // un ancien message peut porter le bouton : la preuve est relue, rien n'est appliqué sans « pass »
+      replyMessage = { response_type: 'in_channel', replace_original: false,
+                       text: '⛔ Patch non appliqué : la preuve n\'est pas « pass ».' };
+    } else if (action.action_id === 'apply_patch') {
       const patch = loadJSON('patch.json');
       const workflowToImport = {
         ...patch.patched_workflow,

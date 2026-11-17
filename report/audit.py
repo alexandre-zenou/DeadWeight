@@ -330,7 +330,9 @@ def _bench_verdict(b):
         return " <i>Banc : non testé.</i>"
     measure = (f"accord de {b['score'] * 100:.0f} %" if b.get("task_type", "classification") == "classification"
                else f"recouvrement de {b['score']:.2f} (indicatif)")
-    tail = "validé" if b["verdict"] == "pass" else "refusé" + (f" ({b['reasons'][0]})" if b["reasons"] else "")
+    # « non conclu » (ADR 0002) : ni validé ni refusé, pas prouvé
+    word = {"pass": "validé", "inconclusive": "non conclu"}.get(b["verdict"], "refusé")
+    tail = word + (f" ({b['reasons'][0]})" if b["verdict"] != "pass" and b["reasons"] else "")
     return f" <b>Banc : {measure} sur {b['n_calls']} requêtes réelles, {html.escape(tail)}.</b>"
 
 

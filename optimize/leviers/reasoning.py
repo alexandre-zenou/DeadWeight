@@ -28,7 +28,9 @@ def reasoning_proposal(finding, events, keys_available, prove_reasoning=None):
     reasons = list(result.get("reasons") or [])
     if bench_passed and not passed:
         reasons.append(f"score {score:.2f} sous le seuil du projet ({THRESHOLD:.0%})")
-    verdict = "pass" if passed else ("non_teste" if result["verdict"] == "not_tested" else "reject")
+    # « non conclu » (ADR 0002) reste tel quel : pas prouvé, pas réfuté non plus
+    verdict = "pass" if passed else {"not_tested": "non_teste", "inconclusive": "inconclusive"}.get(
+        result["verdict"], "reject")
     group = [e for e in events if e["event_id"] in set(finding["event_ids"])]
     before_p95 = _p95([e["latency_ms"] for e in group])
     spent, ref, measured = _cost(group), result.get("reference_cost_per_1000_calls_usd"), result.get("cost_per_1000_calls_usd")

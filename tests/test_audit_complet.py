@@ -240,3 +240,10 @@ def test_zero_constat_est_explique_dans_la_console_et_la_page(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Aucun constat. Pourquoi :" in out and "appels par tâche" in out and "--all-projects" in out
     assert "Pourquoi aucun constat" in (tmp_path / "audit.html").read_text()
+
+
+def test_slack_ne_part_pas_sur_une_preuve_non_conclue(tmp_path, capsys):
+    """« non conclu » (ADR 0002) n'est pas un gain prouvé : rien ne part sur Slack."""
+    sender = Sender()
+    folder = _optim(tmp_path, ["inconclusive"])
+    assert notify(folder, webhook="https://hooks.slack.test/x", sender=sender) == "rien" and not sender.calls

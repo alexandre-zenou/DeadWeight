@@ -17,7 +17,7 @@ from pathlib import Path
 from bench import m2, reasoning
 from bench.catalog import load_candidates, resolve_api_key
 from bench.pricing import load_prices
-from bench.report import dry_run_estimate, rank, to_dict
+from bench.report import dry_run_estimate, label, rank, to_dict
 from bench.runner import DEFAULT_MIN_INTERVAL_S, Throttle, run_candidate
 from bench.scoring import detect_task_type, threshold_for
 from bench.testset import DEFAULT_MAX_CASES, build_test_cases
@@ -62,7 +62,7 @@ def _print_results(report):
     print(f"{report['n_cases']} cas, tache « {report['task_type']} », "
           f"seuil {report['threshold']:.2f}\n")
     for c in report['candidates']:
-        print(f"  {c['candidate_id']:30} {c['verdict']:11} score={c['score']} "
+        print(f"  {c['candidate_id']:30} {label(c['verdict']):11} score={c['score']} "
               f"p95={c['latency_p95_ms']}ms cout/1000={c['cost_per_1000_calls_usd']} "
               f"origine={c['origin']}")
         for reason in c['reasons']:
@@ -173,7 +173,7 @@ def _m2(args):
     if result['raison']:
         print(f"aucune option a tester : {result['raison']}")
     for key, r in result['options'].items():
-        print(f"  {key:20} {r['model']:45} {r['verdict']:11} score={r['score']} erreurs={r['n_errors']}")
+        print(f"  {key:20} {r['model']:45} {label(r['verdict']):11} score={r['score']} erreurs={r['n_errors']}")
         for reason in r['reasons']:
             print(f'      - {reason}')
     out = Path(args.out) / f"banc-{args.finding}.json"
@@ -192,7 +192,7 @@ def _reasoning(args):
         print(f"{args.finding} : aucun constat « raisonnement excessif » de ce nom", file=sys.stderr)
         return 1
     result = reasoning.prove(events, finding, args.effort, args.max_cases, args.max_calls, args.min_interval)
-    print(f"{result['n_cases']} cas, effort « {result['effort']} », verdict {result['verdict']}, "
+    print(f"{result['n_cases']} cas, effort « {result['effort']} », verdict {label(result['verdict'])}, "
           f"score={result['score']}")
     for reason in result['reasons']:
         print(f'  - {reason}')

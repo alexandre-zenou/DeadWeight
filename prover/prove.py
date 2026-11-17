@@ -13,6 +13,8 @@ N8N_URL = os.environ.get("N8N_URL", "http://localhost:5678").rstrip("/")
 API_KEY = os.environ.get("N8N_API_KEY", "")
 THRESHOLD = float(os.environ.get("DW_THRESHOLD", "0.95"))
 MAX_REPLAY = int(os.environ.get("DW_MAX_REPLAY", "100"))
+# « non conclu » (ADR 0002) n'est pas prouvé : jamais affiché comme un PASS (même libellé que report.fmt)
+LABEL = {"inconclusive": "NON CONCLU"}
 
 PRICES = {"gpt-5": {"in": 1.25, "out": 10.0},
           "gpt-4o-mini": {"in": 0.15, "out": 0.60},
@@ -191,7 +193,7 @@ def main():
         print(f"            chemin par regles p95 {proof['p95_rules_path_ms']} ms")
     else:
         print("  latence   non mesuree (pas d'executions lisibles)")
-    print(f"  VERDICT   {proof['verdict'].upper()}  (seuil {THRESHOLD:.0%})\n")
+    print(f"  VERDICT   {LABEL.get(proof['verdict'], proof['verdict'].upper())}  (seuil {THRESHOLD:.0%})\n")
 
 
 if __name__ == "__main__":

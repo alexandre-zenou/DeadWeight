@@ -83,6 +83,11 @@ def test_exclusion_reason_distingue_precision_et_echantillon():
     assert exclusion_reason(prop("d", "pass", None)) == "échantillon insuffisant"
 
 
+def test_exclusion_reason_non_conclu_n_est_pas_un_echec_de_precision():
+    """« non conclu » (ADR 0002) : trop peu de textes distincts, ni prouvé ni refusé."""
+    assert exclusion_reason(prop("reviews", "inconclusive", 80.0)) == "non conclu"
+
+
 def test_excluded_summary_groupe_par_raison():
     items = [prop("mail-triage", "pass", 100.0), prop("reviews", "reject", 100.0),
              prop("brainstorm-bot", "reject", 82.5)]

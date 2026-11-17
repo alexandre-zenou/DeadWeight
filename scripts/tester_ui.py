@@ -111,6 +111,8 @@ def exclusion_reason(p):
     raisons = " ".join(p.get("raisons") or [])
     if "seule réponse" in raisons or "jamais retrouvée" in raisons:
         return "règle qui répond toujours pareil"
+    if p.get("verdict") == "inconclusive":  # ADR 0002 : trop peu de textes distincts, pas un échec
+        return "non conclu"
     if p.get("verdict") == "non_teste" and "clé" in raisons:
         return "non testé sans clé API"
     return "précision < 95 %" if v is not None and v < PRECISION_FLOOR_PCT else "échantillon insuffisant"

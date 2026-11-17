@@ -169,3 +169,13 @@ def test_audit_command_reads_bench_verdicts(events, finding, tmp_path):
     out = tmp_path / "audit.html"
     agent_main([str(DATASET), "-o", str(out), "--banc", str(banc)])
     assert "Banc : accord de 100 % sur 20 requêtes réelles, validé." in out.read_text()
+
+
+def test_report_says_inconclusive_bench_verdict_is_not_proven(events, finding):
+    Client, _ = fake_client(answers(events, finding))
+    result = m2.prove(events, finding, max_cases=20, client_cls=Client)
+    result["options"] = {k: {**o, "verdict": "inconclusive", "reasons": ["trop peu de textes distincts"]}
+                         for k, o in result["options"].items()}
+    page = render_html(build_report(events, banc={FINDING: result}))
+    assert "non conclu (trop peu de textes distincts)" in page
+    assert "validé" not in page and "refusé" not in page
