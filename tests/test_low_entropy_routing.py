@@ -143,6 +143,8 @@ def test_plain_text_outputs_unchanged():
 
 def test_replay_compares_tool_routing_with_the_same_signature():
     evts = _triage(90)
+    for e in evts:  # textes distincts : ceux de _ev ne diffèrent que par des chiffres, ce sont des jumeaux
+        e["request"]["messages"][0]["content"] += " " + "".join(chr(97 + int(d)) for d in e["event_id"][1:])
     [f] = detect(evts)
     rules = {"categories": [{"key": f"outil {h}", "regex": "numero"} for h in HANDOFFS[:1]]}
     proof = replay(f, evts, rules)

@@ -5,13 +5,17 @@ entrées RÉELLES du constat, et compare à ce que le modèle d'origine avait
 répondu. On ne rejoue jamais le modèle d'origine : sa sortie et sa latence
 sont déjà dans les événements.
 
-Données indépendantes : les événements ayant servi d'exemples à l'extraction
-(evidence.samples) sont exclus du rejeu.
+Données indépendantes (ADR 0002) : les événements ayant servi d'exemples à
+l'extraction (evidence.samples) et tous leurs jumeaux (même forme normalisée,
+cf. proof.extract.twin_form) sont exclus du rejeu.
 
 Refuser est un résultat légitime : verdict « reject » avec ses raisons, jamais
 une exception. Chemin proposé : règles, puis secours s'il est fourni, sinon
-l'appel d'origine inchangé. L'accord se mesure sur les entrées que le chemin
-remplace (règles + secours) ; il en faut au moins MIN_REPLAY pour conclure.
+l'appel d'origine inchangé. L'accord se mesure sur les textes distincts que le
+chemin remplace (règles + secours), une voix par groupe de jumeaux, la réponse
+majoritaire du modèle d'origine dans le groupe servant de référence ; il en faut
+au moins MIN_REPLAY, sinon le verdict est « inconclusive » (non conclu). Coûts,
+latences et couverture restent comptés par appel.
 
 Appels API : seul le modèle de secours en fait. Plafond dur (HARD_MAX_CALLS,
 non contournable) et intervalle minimal entre deux appels.
@@ -29,7 +33,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from proof.extract import OpenAICompatibleLLM, build_router, extract_rules
+from proof.extract import OpenAICompatibleLLM, build_router, extract_rules, gabarit_of, twin_form
 from report.cost import PRICING_PATH, chiffrer, lookup
 from rules.low_entropy import canon, detect, output_of
 
@@ -113,16 +117,18 @@ def _tokens_cost(prices, model, tin, tout):
     return (tin * price['in'] + tout * price['out']) / 1_000_000
 
 
-def _missing_calls(replaced, n):
-    """Phrase « non conclu » : ce n'est pas un échec des règles, il manque du volume, et combien."""
-    base = ("NON CONCLU, échantillon trop petit (pas un échec des règles) : les exemples servant à écrire "
-            "les règles sont exclus du rejeu, il faut donc plus d'appels que ce minimum.")
-    missing = MIN_REPLAY - replaced
-    if not replaced or not n:
-        return base + f" Il manque {missing} entrée(s) remplacée(s) ; volume à prévoir non estimable (aucune règle ne couvre encore d'entrée)."
-    more = math.ceil(missing * n / replaced)
-    return base + (f" Il manque {missing} entrée(s) remplacée(s) : compter environ {more} appel(s) "
-                   "de plus de ce gabarit, au rythme de couverture observé.")
+def _missing_texts(distinct, n):
+    """Phrase « non conclu » : ce n'est pas un échec des règles, il manque des textes distincts, et combien."""
+    base = ("NON CONCLU, trop peu de textes distincts (pas un échec des règles) : les exemples servant à "
+            "écrire les règles et leurs jumeaux sont exclus du rejeu, et l'accord se compte une fois par "
+            "texte distinct.")
+    missing = MIN_REPLAY - distinct
+    if not distinct or not n:
+        return base + (f" Il manque {missing} texte(s) distinct(s) remplacé(s) ; volume à prévoir non "
+                       "estimable (aucune règle ne couvre encore d'entrée).")
+    more = math.ceil(missing * n / distinct)
+    return base + (f" Il manque {missing} texte(s) distinct(s) remplacé(s) : compter environ {more} appel(s) "
+                   "de plus de ce gabarit, au rythme observé (couverture et répétitions).")
 
 
 def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=None,
@@ -141,20 +147,33 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
     by_id = {e['event_id']: e for e in events if isinstance(e, dict) and 'event_id' in e}
     group = [by_id[i] for i in finding.get('event_ids', []) if i in by_id]
     used = {s.get('event_id') for s in finding.get('evidence', {}).get('samples', [])}
-    pairs = []
+    # jumeaux (ADR 0002) : même forme normalisée, sur la partie variable comme à l'extraction
+    gabarit = rules.get('gabarit') or gabarit_of([_user_text(e) for e in group])
+    seen_forms = {twin_form(_user_text(by_id[i]), gabarit) for i in used if i in by_id}
+    pairs, twins = [], 0
     for e in group:
         # même étiquette que la règle : texte normalisé, JSON à plat ou signature d'appel d'outil (#105)
         text, expected = _user_text(e), output_of(e)
         if e['event_id'] in used or e.get('error') is not None or not text.strip() or expected is None:
             continue
-        pairs.append((e, text, expected))
+        form = twin_form(text, gabarit)
+        if form in seen_forms:
+            twins += 1
+            continue
+        pairs.append((e, text, expected, form))
+
+    # référence d'un groupe de jumeaux : réponse majoritaire du modèle d'origine dans le groupe
+    by_form = {}
+    for _, _, expected, form in pairs:
+        by_form.setdefault(form, Counter())[expected] += 1
+    reference = {form: answers.most_common(1)[0][0] for form, answers in by_form.items()}
 
     reasons, disagreements = [], []
-    agree = matched = sent = capped = 0
+    matched = sent = capped = 0
     capped_ids = set()
     lat_after, fb_in, fb_out, fb_ok = [], 0, 0, True
-    seen, right = Counter(), Counter()  # réponses attendues vérifiées, et retrouvées, par réponse
-    for e, text, expected in pairs:
+    results = {}  # forme remplacée -> [(événement, texte, réponse obtenue, voie)], par appel
+    for e, text, expected, form in pairs:
         t0 = time.perf_counter()
         got, via = route(text), 'regles'
         extra_ms = 0.0
@@ -180,22 +199,33 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
             via = 'non couvert'
             extra_ms = e['latency_ms']  # reste sur le modèle d'origine : latence mesurée
         lat_after.append((time.perf_counter() - t0) * 1000 + extra_ms)
-        if via == 'non couvert':
-            continue  # appel d'origine inchangé : rien à comparer
+        if via != 'non couvert':  # appel d'origine inchangé : rien à comparer
+            results.setdefault(form, []).append((e, text, got, via))
+
+    # accord : une voix par texte distinct remplacé (ADR 0002), réponse obtenue majoritaire du groupe
+    agree = 0
+    seen, right = Counter(), Counter()  # réponses attendues vérifiées, et retrouvées, par réponse
+    for form, calls in results.items():
+        expected = reference[form]
+        got = Counter(c[2] for c in calls).most_common(1)[0][0]
         seen[expected] += 1
         if got == expected:
             agree += 1
             right[expected] += 1
         elif len(disagreements) < MAX_DISAGREEMENTS:
+            e, text, _, via = next(c for c in calls if c[2] == got)
             disagreements.append({'event_id': e['event_id'], 'input': text[:120],
                                   'expected': expected, 'got': got, 'via': via})
 
-    n, replaced = len(pairs), matched + sent
-    rate = agree / replaced if replaced else 0.0
-    if replaced < MIN_REPLAY:
-        reasons.append(f'{replaced} entrée(s) remplacée(s) sur {n} rejouée(s), '
-                       f'il en faut au moins {MIN_REPLAY} pour conclure. {_missing_calls(replaced, n)}')
-    if rate < threshold:
+    n, replaced, distinct = len(pairs), matched + sent, len(results)
+    rate = agree / distinct if distinct else 0.0
+    # refusé : les règles échouent ; non conclu : rien à leur reprocher, mais pas assez de textes
+    # distincts pour trancher. Les deux à la fois : refusé (ADR 0002).
+    too_few = None
+    if distinct < MIN_REPLAY:
+        too_few = (f'{distinct} texte(s) distinct(s) remplacé(s) ({replaced} appel(s) sur {n} rejoué(s)), '
+                   f'il en faut au moins {MIN_REPLAY} pour conclure. {_missing_texts(distinct, n)}')
+    if distinct and rate < threshold:
         reasons.append(f'accord {rate:.1%} sous le seuil de {threshold:.0%}')
     if not keys:
         reasons.append("aucune règle extraite : rien à rejouer")
@@ -203,8 +233,12 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         # une règle qui répond toujours la même chose ne prouve rien : le jeu de test doit contenir
         # plusieurs réponses, et chacune doit être retrouvée au moins une fois
         if len(seen) < 2:
-            reasons.append(f"le jeu de test ne contient qu'une seule réponse ({next(iter(seen))}) : "
-                           "une règle constante aurait le même score, rien n'est prouvé")
+            single = (f"le jeu de test ne contient qu'une seule réponse ({next(iter(seen))}) : "
+                      "une règle constante aurait le même score, rien n'est prouvé")
+            if too_few:  # manque de données, pas un échec des règles : reste « non conclu »
+                too_few += ' Et ' + single + '.'
+            else:
+                reasons.append(single)
         else:
             reasons += [f"la réponse « {k} » n'est jamais retrouvée par les règles ({seen[k]} cas)"
                         for k in sorted(seen) if not right[k]]
@@ -219,16 +253,19 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         elif fb_ok and fallback_model:
             prices = prices or _prices()
             orig = [_tokens_cost(prices, e['model'], e['usage'].get('input_tokens'),
-                                 e['usage'].get('output_tokens')) for e, _, _ in pairs]
+                                 e['usage'].get('output_tokens')) for e, _, _, _ in pairs]
             fb = _tokens_cost(prices, fallback_model, fb_in, fb_out) if sent else 0.0
             if fb is not None and None not in orig and sum(orig) > 0:
                 # rapport secours / origine mesuré sur les mêmes entrées, appliqué au mois
                 # (les entrées plafonnées restent au modèle d'origine)
-                orig_capped = sum(o for (e, _, _), o in zip(pairs, orig) if e['event_id'] in capped_ids)
+                orig_capped = sum(o for (e, _, _, _), o in zip(pairs, orig) if e['event_id'] in capped_ids)
                 after = before * (fb + orig_capped) / sum(orig)
     missing = list(costs['manquants'])
     if after is None and before is not None:
         missing.append('coût après non mesurable (usage ou tarif du secours inconnu)')
+    verdict = 'reject' if reasons else 'inconclusive' if too_few else 'pass'
+    if too_few:
+        reasons.insert(0, too_few)
 
     return {
         'patch_id': rules_id,
@@ -240,7 +277,10 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         'source': 'evenements passerelle, hors exemples d\'extraction',
         'n_replayed': n,
         'n_replaced': replaced,
+        'n_distinct_replaced': distinct,
         'n_excluded_extraction_samples': len(used & {e['event_id'] for e in group}),
+        'n_excluded_twins': twins,
+        'n_distinct': len({form for _, _, _, form in pairs}),
         'agreement_rate': round(rate, 4),
         'matched_by_rules': matched,
         'sent_to_fallback': sent,
@@ -252,10 +292,10 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
         'cost_after_month_usd': round(after, 4) if after is not None else None,
         'cost_factor': round(before / after, 1) if before and after else None,
         'cost_missing': missing,
-        'p95_before_ms': _p95([e['latency_ms'] for e, _, _ in pairs]),
+        'p95_before_ms': _p95([e['latency_ms'] for e, _, _, _ in pairs]),
         'p95_after_ms': round(_p95(lat_after), 2) if lat_after else None,
         'threshold': threshold,
-        'verdict': 'pass' if not reasons else 'reject',
+        'verdict': verdict,
         'reasons': reasons,
     }
 
@@ -263,10 +303,12 @@ def replay(finding, events, rules, fallback=None, fallback_model=None, throttle=
 def _print(proof):
     n = proof['n_replayed']
     print(f"\n{proof['finding_id']}  ({proof['app_id']}, {proof['model']})")
-    print(f"  rejoué    {n} entrées réelles, {proof['n_excluded_extraction_samples']} exemples "
-          f"d'extraction exclus")
-    print(f"  accord    {proof['agreement_rate']:.1%} sur les {proof['n_replaced']} entrées remplacées "
-          f"({proof['matched_by_rules']} par règles, {proof['sent_to_fallback']} par secours)")
+    print(f"  rejoué    {n} entrées réelles ({proof['n_distinct']} textes distincts), "
+          f"{proof['n_excluded_extraction_samples']} exemples d'extraction et "
+          f"{proof['n_excluded_twins']} jumeaux exclus")
+    print(f"  accord    {proof['agreement_rate']:.1%} sur les {proof['n_distinct_replaced']} textes distincts "
+          f"remplacés ({proof['n_replaced']} appels : {proof['matched_by_rules']} par règles, "
+          f"{proof['sent_to_fallback']} par secours)")
     print(f"  couvert   {proof['rules_coverage']:.0%} des entrées sans aucun modèle ; "
           f"{n - proof['n_replaced']} restent sur l'appel d'origine")
     if proof['cost_factor']:

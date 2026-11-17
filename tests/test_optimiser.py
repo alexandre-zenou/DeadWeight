@@ -3,8 +3,13 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from gateway.store import EventStore
 from scripts.optimiser import main
+
+# preuve « prouvé » attendue sur le jeu v1 : minimum abaissé (cf. tests/conftest.py, #7)
+pytestmark = pytest.mark.usefixtures("minimum_v1")
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = [json.loads(line) for line in (ROOT / "fixtures/dataset/v1/events.jsonl").read_text().splitlines()]
@@ -31,6 +36,7 @@ def _repo(tmp_path):
 
 def test_one_command_goes_from_capture_to_micro_pr_diffs(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-ne-doit-pas-servir")  # sans --banc, jamais transmise
+    monkeypatch.setenv("DW_MIN_CALLS", "25")  # python -m optimize tourne à part : minimum v1 par la variable (#7)
     out, repo = tmp_path / "res", _repo(tmp_path)
     assert main(["--db", str(_db(tmp_path)), "--out", str(out), "--repo", str(repo)]) == 0
     assert (out / "audit.html").is_file()
