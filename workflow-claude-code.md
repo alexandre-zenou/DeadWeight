@@ -170,3 +170,28 @@ humaine (`AGENTS.md`). On en reparle quand la file de tickets dépassera ce qu'o
 Tout ce qui règle la méthode vit dans le dépôt (`AGENTS.md`, `CLAUDE.md`, `docs/agents/`, `GLOSSARY.md`, `docs/adr/`,
 `PRODUCT.md`, `DESIGN.md`, `.agents/skills/`), pas dans un `~/.claude` personnel : c'est ce qui la rend commune à
 toute l'équipe.
+
+## Où on en est (17 novembre 2026)
+
+Fait :
+
+- [x] Fork `alexandre-zenou/DeadWeight` remis à jour sur `hugogsld/DeadWeight` (`upstream`), issues activées.
+- [x] Skills installées dans le dépôt (`.agents/skills/`, `.claude/skills/`, `skills-lock.json`).
+- [x] Ce guide adapté à DeadWeight.
+- [x] `/setup-matt-pocock-skills` : tracker = GitHub Issues du fork, étiquettes de tri créées (`needs-triage`,
+      `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), domaine single-context. Écrit `docs/agents/` et
+      la section `## Agent skills` de `CLAUDE.md`.
+
+À faire, dans l'ordre :
+
+1. [ ] Relire et fusionner la PR de cette branche (`docs/workflow-claude-code`) sur le fork.
+2. [ ] `/impeccable init` : écrire `PRODUCT.md` (pour qui, pourquoi, la barre de qualité).
+3. [ ] Ajouter dans `CLAUDE.md` le tableau « quand je… → la skill » (section « Poser le contexte »).
+4. [ ] Premier essai sur une fonction déjà livrée : `/grill-with-docs` sur `tool_bloat` (levier 15), puis
+       `/to-spec` et `/to-tickets` ; comparer à l'issue et à la PR du hackathon. Premières ADR et premier
+       `GLOSSARY.md` attendus ici.
+5. [ ] `/impeccable document` : écrire `DESIGN.md` à partir du rapport et de la page développeur.
+6. [ ] Premier essai sur une fonction nouvelle : un levier « à faire » de `leviers/README.md`, du grill jusqu'aux PR
+       avec `/implement`, une session par ticket.
+7. [ ] Décider avec l'équipe : garder le tracker sur le fork, ou le passer sur `hugogsld/DeadWeight` pour que tout le
+       monde voie les specs et les tickets (modifier `docs/agents/issue-tracker.md`).
