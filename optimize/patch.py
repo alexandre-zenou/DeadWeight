@@ -12,6 +12,9 @@ Recettes, volontairement simples et vérifiables à la relecture :
 - ``regles`` sur une source n8n (``app_id`` de la forme ``n8n:<workflow>/<noeud>``) : le nœud LLM
   classifieur est remplacé par un Switch déterministe (les règles prouvées) + le modèle d'origine
   gardé en secours pour les entrées non couvertes. Écrit le workflow patché dans le dépôt de démo.
+- ``memoire`` : dans chaque workflow n8n du dépôt qui a une mémoire de conversation, la fenêtre réglée au
+  nombre d'échanges prouvé, la lecture de tout l'historique limitée à ces échanges, et une clé de session
+  fixe remplacée par une clé par utilisateur (``optimize.patch_memoire_n8n``).
 
 Rien n'est poussé sans ``open_pr`` : par défaut, on écrit le diff et le texte de la PR.
 """
@@ -23,6 +26,7 @@ import tempfile
 from pathlib import Path
 
 from optimize.patch_alias import rewrite_model_alias
+from optimize.patch_memoire_n8n import apply_memoire_n8n
 from optimize.patch_n8n import apply_regles_n8n
 
 SKIP = {".git", ".venv", "venv", "node_modules", "__pycache__", "out", "private"}
@@ -100,8 +104,12 @@ def _apply_modele_alias(repo, proposal):
     return [] if touched else [f"aucun appel spawn() avec un label parmi {prefixes} trouvé"]
 
 
+def _apply_memoire(repo, proposal):
+    return apply_memoire_n8n(repo, proposal, [p for p in _files(repo) if p.suffix == ".json"])
+
+
 RECIPES = {"regles": _apply_regles, "modele": _apply_modele, "plafond": _apply_plafond,
-           "modele_alias": _apply_modele_alias}
+           "modele_alias": _apply_modele_alias, "memoire": _apply_memoire}
 
 
 def make_patch(repo, proposal):

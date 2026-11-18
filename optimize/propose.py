@@ -14,7 +14,8 @@ Types de modifications (une par micro-PR) :
 - ``erreurs``      : les relances d'un échec déjà facturé (R9), évitées en corrigeant la cause ;
 - ``cache_prompt`` : le cache de prompt du fournisseur (R4), calcul exact sur les jetons répétés ;
 - ``batch``        : l'API batch d'un fournisseur (R14), remise de scénario non vérifiée par modèle ;
-- ``raisonnement`` : un effort de raisonnement réduit (R7), prouvé au banc (clé OpenAI nécessaire).
+- ``raisonnement`` : un effort de raisonnement réduit (R7), prouvé au banc (clé OpenAI nécessaire) ;
+- ``memoire``      : une mémoire de conversation bornée (R20), prouvée par rejeu (clé OpenAI nécessaire).
 
 Le verdict « pass » exige une précision >= proof.replay.THRESHOLD (95 %), mesurée, jamais
 estimée (même seuil que le rejeu des règles, réutilisé plutôt que redéfini). Pour les types sans
@@ -22,7 +23,7 @@ risque de qualité (cache, erreurs, cache_prompt : le modèle et sa réponse ne 
 la facturation ou le nombre d'appels change), cette précision de 100 % n'est pas une hypothèse
 mais la définition même du constat sous-jacent ; elle reste donc « mesurée », pas fabriquée.
 
-``cache``, ``erreurs``, ``cache_prompt``, ``batch`` et ``raisonnement`` vivent dans
+``cache``, ``erreurs``, ``cache_prompt``, ``batch``, ``raisonnement`` et ``memoire`` vivent dans
 optimize/leviers/ (un module par levier), pour que chaque nouveau levier ne touche que son
 propre fichier ; seule leur ligne de câblage reste ici, dans propose().
 """
@@ -193,14 +194,16 @@ def _cap_cost(group, cap):
     return {"avant": spent, "apres": spent - cut if spent is not None else None, "statut": MESURE}
 
 
-def propose(events, llm=None, keys_available=False, prove=None, prove_reasoning=None):
+def propose(events, llm=None, keys_available=False, prove=None, prove_reasoning=None, prove_memory=None):
     """Toutes les propositions testables, dans l'ordre des constats.
-    ``prove`` : bench.m2.prove (injectable) ; ``prove_reasoning`` : bench.reasoning.prove (injectable).
+    ``prove`` : bench.m2.prove (injectable) ; ``prove_reasoning`` : bench.reasoning.prove (injectable) ;
+    ``prove_memory`` : bench.memory.prove (injectable).
     cache/erreurs/cache_prompt/batch/raisonnement : voir optimize/leviers/ (un fichier par levier)."""
     from optimize.leviers.batch import batch_proposal
     from optimize.leviers.cache import cache_proposal
     from optimize.leviers.cache_prompt import cache_prompt_proposal
     from optimize.leviers.errors import errors_proposal
+    from optimize.leviers.memoire import memory_proposal
     from optimize.leviers.reasoning import reasoning_proposal
     if prove is None:
         from bench.m2 import prove
@@ -230,6 +233,8 @@ def propose(events, llm=None, keys_available=False, prove=None, prove_reasoning=
             out.append(batch_proposal(f, events))
         elif f["rule"] == "excess_reasoning":
             out.append(reasoning_proposal(f, events, keys_available, prove_reasoning))
+        elif f["rule"] == "endless_memory":
+            out.append(memory_proposal(f, events, keys_available, prove_memory))
     return out
 
 
