@@ -234,6 +234,30 @@ def test_models_refusing_temperature_are_retried_without_it(monkeypatch):
     assert 'temperature' in sent[0] and 'temperature' not in sent[1]
 
 
+def test_models_refusing_max_tokens_are_retried_with_max_completion_tokens(monkeypatch):
+    """gpt-5 refuse aussi max_tokens (400) : dernière relance avec max_completion_tokens (#28)."""
+    import io
+    import json
+    import urllib.error
+    from bench import client as client_mod
+    sent = []
+
+    def fake_urlopen(request, timeout=None):
+        body = json.loads(request.data)
+        sent.append(body)
+        if 'temperature' in body or 'max_tokens' in body:
+            raise urllib.error.HTTPError(request.full_url, 400, 'bad request', {}, io.BytesIO(b'{}'))
+        return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'Vera'}}],
+                                      'usage': {'prompt_tokens': 10, 'completion_tokens': 1}}).encode())
+
+    monkeypatch.setattr(client_mod.urllib.request, 'urlopen', fake_urlopen)
+    llm = client_mod.CandidateLLM('https://api.example.test/v1', 'k', 'gpt-5-nano', max_tokens=50)
+    result = llm.complete([{'role': 'user', 'content': 'Language: Spanish'}])
+    assert result.content == 'Vera' and result.error is None
+    assert sent[-1]['max_completion_tokens'] == 50 and 'max_tokens' not in sent[-1]
+    assert 'temperature' not in sent[-1]
+
+
 def test_rank_places_inconclusive_after_reject_and_before_not_tested(echo_server, fixed_server):
     """« non conclu » (ADR 0002) n'est pas prouvé : jamais devant un « pass »."""
     from dataclasses import replace
