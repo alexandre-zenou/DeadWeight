@@ -65,6 +65,30 @@ def test_openai_editor_route_builds_a_direct_candidate_not_openrouter(events, fi
     assert candidate.route is None  # jamais de provider OpenRouter pour un appel direct
 
 
+def test_openai_direct_route_sends_the_model_name_without_catalog_prefix(events, finding, monkeypatch):
+    """L'API OpenAI directe refuse « openai/gpt-5-nano » (id catalogue) : elle reçoit « gpt-5-nano » ;
+    le résultat du banc garde l'id catalogue (prix, affichage)."""
+    from bench.runner import run_candidate
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    group = [e for e in events if e["event_id"] in set(finding["event_ids"])]
+    option = recommend(group)["options"]["meilleur_compromis"]
+    candidate = m2.candidate_for("meilleur_compromis", option)
+    sent = []
+
+    class Spy:
+        def __init__(self, base_url, api_key, model, **kw):
+            sent.append(model)
+
+        def complete(self, messages, tools=None):
+            from bench.client import CallResult
+            return CallResult("x", 1.0, 1, 1, None)
+
+    cases = build_test_cases(events, finding["app_id"], finding["model"], finding["template"], 2)
+    result = run_candidate(candidate, cases, "classification", client_cls=Spy)
+    assert sent == [option["modele"].split("/", 1)[-1]] and "/" not in sent[0]
+    assert result.candidate.model == option["modele"]
+
+
 def test_only_openai_api_key_is_enough_to_measure_the_openai_route(events, finding, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")

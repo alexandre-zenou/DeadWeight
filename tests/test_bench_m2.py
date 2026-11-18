@@ -87,7 +87,9 @@ def test_route_option_is_priced_at_its_route(events, finding):
 def test_report_shows_measured_verdicts(events, finding):
     group = [e for e in events if e["event_id"] in set(finding["event_ids"])]
     options = recommend(group)["options"]
-    Client, _ = fake_client(answers(events, finding), wrong={options["meilleur_compromis"]["modele"]})
+    # « meilleur_compromis » est sur la route OpenAI directe : le client reçoit le nom sans « openai/ »
+    wrong = options["meilleur_compromis"]["modele"].split("/", 1)[-1]
+    Client, _ = fake_client(answers(events, finding), wrong={wrong})
     banc = {FINDING: m2.prove(events, finding, max_cases=20, client_cls=Client)}
     page = render_html(build_report(events, banc=banc))
     assert "qualité mesurée au banc sur votre trafic" in page
