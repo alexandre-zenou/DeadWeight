@@ -165,11 +165,47 @@ def _squeezed(events, seconds):
     return out
 
 
+def _spread(events, seconds):
+    """Mêmes appels, étalés sur ``seconds`` secondes de trafic (workflow 8 : 270 appels en ~15 min)."""
+    from datetime import datetime, timedelta
+    t0 = datetime(2026, 11, 18, 9, 0, 0)
+    out = []
+    for i, e in enumerate(events):
+        e = dict(e)
+        t = t0 + timedelta(seconds=i * seconds / max(len(events) - 1, 1))
+        e["ts_start"] = t.isoformat() + "Z"
+        e["ts_end"] = (t + timedelta(milliseconds=500)).isoformat() + "Z"
+        out.append(e)
+    return out
+
+
+def test_short_traffic_still_gets_options_without_monthly_figure(events):
+    """#23 : sous la fenêtre minimale, les options sont proposées (pour le banc), sans coût mensuel."""
+    group = [e for e in events if e["app_id"] == "mail-triage"]
+    short = _spread(group, 15 * 60)
+    rec, full = recommend(short), recommend(group)
+    assert rec["projection_mensuelle"] is False and full["projection_mensuelle"] is True
+    assert rec["cout_mensuel_usd"] is None and rec["raison"] is None and "1 000 appels" in rec["note"]
+    assert {k: o and o["modele"] for k, o in rec["options"].items()} == \
+        {k: o and o["modele"] for k, o in full["options"].items()}
+    assert any(rec["options"].values())
+    # le coût pour 1 000 appels ne dépend pas de la fenêtre : donné avant/après, même sur trafic court
+    assert rec["cout_1000_appels_usd"] == pytest.approx(full["cout_1000_appels_usd"]) and rec["cout_1000_appels_usd"] > 0
+    for key, o in rec["options"].items():
+        if o:
+            assert o["cout_mensuel_usd"] is None and o["economie_usd"] is None
+            assert 0 < o["cout_1000_appels_usd"] < rec["cout_1000_appels_usd"]
+            assert o["cout_1000_appels_usd"] == pytest.approx(full["options"][key]["cout_1000_appels_usd"])
+            assert o["facteur"] == full["options"][key]["facteur"]
+
+
 def test_no_monthly_figure_on_less_than_an_hour_of_traffic(events):
     """Bug : la carte disait « projection non fiable » mais les alternatives affichaient un coût mensuel."""
     short = _squeezed([e for e in events if e["app_id"] == "mail-triage"], 30)
     rec = recommend(short)
-    assert rec["options"] == {} and rec["cout_mensuel_usd"] is None and "moins d'une heure" in rec["raison"]
+    assert rec["cout_mensuel_usd"] is None and rec["projection_mensuelle"] is False
+    assert all(o["cout_mensuel_usd"] is None for o in rec["options"].values() if o)
+    # le rapport d'audit garde sa garde : pas d'alternatives chiffrées au mois sur trafic court
     card = next(c for c in build_report(short)["constats"] if c["alternatives"] is not None)
     assert card["chiffres"]["cout_mensuel_usd"] is None
     assert "Autres modèles compatibles" not in render_html(build_report(short))
