@@ -51,13 +51,17 @@ class CandidateLLM:
         result = self._call({'model': self.model, 'temperature': 0, 'messages': list(messages), **extra})
         if result.error == 'http_400':
             result = self._call({'model': self.model, 'messages': list(messages), **extra})
+        if result.error == 'http_400' and getattr(self, 'max_tokens', None):
+            # gpt-5 et o-series refusent aussi max_tokens (400 « use max_completion_tokens ») : #28
+            result = self._call({'model': self.model, 'messages': list(messages), **extra},
+                                token_param='max_completion_tokens')
         return result
 
-    def _call(self, body):
-        if self.route:
+    def _call(self, body, token_param='max_tokens'):
+        if getattr(self, 'route', None):
             body = {**body, 'provider': {'order': [self.route], 'allow_fallbacks': False}}
-        if self.max_tokens:
-            body = {**body, 'max_tokens': self.max_tokens}
+        if getattr(self, 'max_tokens', None):
+            body = {**body, token_param: self.max_tokens}
         headers = {'Content-Type': 'application/json'}
         if self.api_key:
             headers['Authorization'] = 'Bearer ' + self.api_key
