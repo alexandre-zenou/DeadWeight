@@ -63,7 +63,7 @@ def main(argv=None):
     links, diffs = {}, {}
     for i, p in enumerate(proposals):
         precision = (p["mesures"].get("precision") or {}).get("valeur")
-        if (args.repo and p["verdict"] == "pass" and p["type"] in ("regles", "modele", "plafond")
+        if (args.repo and p["verdict"] == "pass" and p["type"] in ("regles", "modele", "plafond", "memoire")
                 and precision is not None and precision >= PRECISION_FLOOR_PCT):
             diff, notes = make_patch(args.repo, p)
             diffs[i] = diff

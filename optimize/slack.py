@@ -46,6 +46,10 @@ def quoi_changer(p):
         effort = (p.get("preuve") or {}).get("effort") or "low"
         return (f"Quoi changer : dans l'appel au modèle, `reasoning_effort=\"{effort}\"` "
                 f"(API Responses : `reasoning={{\"effort\": \"{effort}\"}}`).")
+    if kind == "memoire" and p.get("fenetre"):
+        return (f"Quoi changer : ne renvoyer que les {p['fenetre']} derniers échanges de la mémoire (n8n : "
+                f"`Context Window Length` = {p['fenetre']}, et un Limit après « Get Chat »). Vérifier aussi la clé "
+                "de session : une clé fixe fait partager la même conversation à tous les utilisateurs.")
     if kind == "cache_prompt":
         if model.startswith("claude"):
             return ("Quoi changer : mettre instructions et outils en tête du prompt, et ajouter "

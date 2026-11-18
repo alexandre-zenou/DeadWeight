@@ -52,6 +52,12 @@ L'issue d'une preuve : prouvé (accord au-dessus du seuil), refusé (accord en d
 textes distincts pour trancher, ce qui n'est pas un échec des règles).
 _Éviter_ : pass/reject dans les textes pour les humains
 
+**Rejeu témoin** :
+Le même appel rejoué sans la modification (ex. mémoire complète au lieu de bornée), noté comme elle contre la
+réponse d'origine : il mesure ce que le modèle redonne de lui-même, pour qu'un texte libre jamais répété mot pour mot
+ne passe pas pour un effet de la modification.
+_Éviter_ : contrôle, baseline
+
 **Par-cœur** :
 Une règle d'aiguillage qui recopie un exemple d'extraction (une phrase entière) au lieu de reconnaître un sujet.
 _Éviter_ : surapprentissage, overfitting

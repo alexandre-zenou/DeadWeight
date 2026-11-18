@@ -33,6 +33,18 @@ def _proof_notes(proof):
     if proof.get("n_distinct") is not None:
         out += (f"<p class='mute'>{proof['n_replayed']} appels rejoués, {proof['n_distinct']} textes distincts "
                 "(l'accord se compte une fois par texte distinct).</p>")
+    if proof.get("window") is not None and proof.get("n_replayed"):
+        out += (f"<p class='mute'>Mémoire bornée aux {proof['window']} derniers échanges : "
+                f"{proof['n_identical']} appels identiques (historique déjà dans la fenêtre, non rejoués), "
+                f"{proof['n_replayed']} rejoués deux fois, mémoire bornée et témoin à mémoire complète, notés "
+                f"contre la réponse d'origine ({e(str(proof.get('task_type')))}) : score moyen "
+                f"{proof['score_bounded']:g} borné, {proof['score_full']:g} témoin.</p>")
+        gaps = proof.get("gaps") or []
+        if gaps:
+            items = "".join(f"<li>« {e(g['question'])} » ({g['exchanges']} échanges avant) : "
+                            f"{g['score_bounded']:g} borné contre {g['score_full']:g} témoin</li>" for g in gaps)
+            out += (f"<p class='na'>Réponses qui s'écartent le plus quand la mémoire est bornée ({len(gaps)}) : "
+                    f"un rappel d'un échange ancien en est souvent la cause.</p><ul class='na'>{items}</ul>")
     flagged = proof.get("memorized_rules") or []
     if flagged:
         items = "".join(
