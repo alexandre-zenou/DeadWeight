@@ -3,14 +3,17 @@ de prompt), comme le regroupement de rules.low_entropy._groups.
 
 Chaque cas = les messages envoyes au modele d'origine + sa reponse, qui sert de
 reference pour juger un candidat. Les appels en erreur ou sans reponse exploitable
-sont exclus. Le tirage est deterministe (tri par hachage de l'event_id, pas par
-ordre chronologique) : deux lancees sur le meme trafic produisent le meme jeu, et
+sont exclus. Une reponse donnee par un appel d'outil (sortie JSON structuree d'n8n,
+outil format_final_json_response, texte vide) est gardee : sa reference est l'etiquette
+de rules.low_entropy.output_of, et le cas emporte les outils declares (#24).
+Le tirage est deterministe (tri par hachage de l'event_id, pas par ordre
+chronologique) : deux lancees sur le meme trafic produisent le meme jeu, et
 l'echantillon n'est pas biaise vers une seule periode.
 """
 import hashlib
 
 from bench.models import BenchCase
-from rules.low_entropy import template_of
+from rules.low_entropy import output_kind, output_of, template_of
 
 DEFAULT_MAX_CASES = 50
 
@@ -32,6 +35,18 @@ def _usable_messages(event):
     return ([{'role': 'system', 'content': system}] if system else []) + turns
 
 
+def _answered_by_tool(event):
+    """Texte vide (None ou "") et appel d'outil qui repond directement a l'utilisateur, pas
+    une etape de boucle d'agent (meme critere que la regle low_entropy_output)."""
+    response = event.get('response')
+    return isinstance(response, dict) and not response.get('content') and output_kind(event) == 'appel_outil'
+
+
+def _reference(event):
+    """L'etiquette output_of si l'origine a repondu par un outil, sinon le texte tel quel."""
+    return output_of(event) if _answered_by_tool(event) else (event.get('response') or {}).get('content')
+
+
 def build_test_cases(events, app_id, model, template=None, max_cases=DEFAULT_MAX_CASES):
     """events : liste au schema event v1 (dicts). Groupe filtre par app_id et model,
     et par gabarit si fourni (meme fonction que la regle low_entropy_output)."""
@@ -39,7 +54,7 @@ def build_test_cases(events, app_id, model, template=None, max_cases=DEFAULT_MAX
     for event in events:
         if not isinstance(event, dict) or event.get('app_id') != app_id or event.get('model') != model:
             continue
-        if event.get('error') is not None or (event.get('response') or {}).get('content') is None:
+        if event.get('error') is not None or _reference(event) is None:
             continue
         if template is not None and template_of(event) != template:
             continue
@@ -54,8 +69,9 @@ def build_test_cases(events, app_id, model, template=None, max_cases=DEFAULT_MAX
         cases.append(BenchCase(
             event_id=event['event_id'],
             messages=tuple(_usable_messages(event)),
-            reference=event['response']['content'],
+            reference=_reference(event),
             origin_input_tokens=usage.get('input_tokens'),
             origin_output_tokens=usage.get('output_tokens'),
+            tools=tuple(event['request'].get('tools') or ()) if _answered_by_tool(event) else (),
         ))
     return cases

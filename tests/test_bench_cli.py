@@ -135,3 +135,23 @@ def test_explicit_id_request_runs_the_candidate_even_without_a_key(candidates_fi
     report = json.loads(out_path.read_text())
     assert {c['candidate_id'] for c in report['candidates']} == {'fixture-needs-key'}
     assert 'clé absente' not in capsys.readouterr().err
+
+
+def test_dry_run_finds_cases_when_origin_answers_json_through_a_tool(candidates_file, tmp_path, capsys):
+    """#24 : workflow n8n à sortie structurée, la réponse est un appel d'outil, pas du texte."""
+    tool = {'name': 'format_final_json_response', 'parameters': {'type': 'object'}}
+    lines = []
+    for i in range(30):
+        args = json.dumps({'output': {'qualityScore': 8 + i % 3, 'passesQuality': True}})
+        lines.append(json.dumps({
+            'event_id': f'e{i}', 'app_id': 'n8n-demo', 'model': 'gpt-4o', 'error': None,
+            'usage': {'input_tokens': 300, 'output_tokens': 20},
+            'request': {'system': 'Relis.', 'messages': [{'role': 'user', 'content': f'texte {i}'}],
+                        'tools': [tool]},
+            'response': {'content': None, 'tool_calls': [{'name': tool['name'], 'arguments': args}]},
+        }))
+    events_path = tmp_path / 'events.jsonl'
+    events_path.write_text('\n'.join(lines))
+    assert main(['run', str(events_path), '--app', 'n8n-demo', '--model', 'gpt-4o', '--dry-run']) == 0
+    out = capsys.readouterr().out
+    assert '30 cas de test' in out and 'classification' in out

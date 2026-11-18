@@ -14,8 +14,8 @@ from statistics import mean
 
 from bench.client import CandidateLLM
 from bench.pricing import cost_per_1000_calls, load_prices
-from bench.runner import Throttle, _percentile
-from bench.scoring import detect_task_type, score_case, threshold_for
+from bench.runner import Throttle, _percentile, ask
+from bench.scoring import answer_of, detect_task_type, score_case, threshold_for
 from bench.testset import DEFAULT_MAX_CASES, build_test_cases
 
 DEFAULT_EFFORT = "low"
@@ -54,14 +54,14 @@ def prove(events, finding, effort=DEFAULT_EFFORT, max_cases=DEFAULT_MAX_CASES,
         if not throttle.acquire():
             break
         n_calls += 1
-        result = client.complete(case.messages)
+        result = ask(client, case)
         latencies.append(result.latency_ms)
         calls_usage.append((result.input_tokens, result.output_tokens))
         if result.error is not None:
             errors += 1
             scores.append(0.0)
             continue
-        scores.append(score_case(task_type, result.content, case.reference))
+        scores.append(score_case(task_type, answer_of(case, result), case.reference))
 
     score = round(sum(scores) / len(scores), 4) if scores else None
     tin = [t for t, _ in calls_usage if t is not None]

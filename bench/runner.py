@@ -9,7 +9,7 @@ from bench.catalog import resolve_api_key, resolve_base_url
 from bench.client import CandidateLLM
 from bench.models import CandidateResult
 from bench.pricing import cost_per_1000_calls
-from bench.scoring import score_case, threshold_for
+from bench.scoring import answer_of, score_case, threshold_for
 
 HARD_MAX_CALLS = 200
 DEFAULT_MAX_CALLS = 50
@@ -55,6 +55,11 @@ def _cost(candidate, calls_usage, prices):
     return cost_per_1000_calls(candidate.model, avg_in, avg_out, prices)
 
 
+def ask(client, case):
+    """Rejoue un cas ; les outils ne sont envoyés que si l'origine a répondu par un outil (#24)."""
+    return client.complete(case.messages, tools=case.tools) if case.tools else client.complete(case.messages)
+
+
 def run_candidate(candidate, cases, task_type, throttle=None, prices=None, client_cls=CandidateLLM):
     """N'echoue jamais par exception : un candidat en panne devient un verdict reject, sauf si
     tous ses appels ont echoue en authentification (cle absente ou refusee) : ce n'est alors pas
@@ -69,7 +74,7 @@ def run_candidate(candidate, cases, task_type, throttle=None, prices=None, clien
         if not throttle.acquire():
             break
         n_calls += 1
-        result = client.complete(case.messages)
+        result = ask(client, case)
         latencies.append(result.latency_ms)
         calls_usage.append((result.input_tokens, result.output_tokens))
         if result.error is not None:
@@ -77,7 +82,7 @@ def run_candidate(candidate, cases, task_type, throttle=None, prices=None, clien
             error_codes.append(result.error)
             scores.append(0.0)
             continue
-        scores.append(score_case(task_type, result.content, case.reference))
+        scores.append(score_case(task_type, answer_of(case, result), case.reference))
 
     if n_calls and errors == n_calls and all(code in AUTH_ERROR_CODES for code in error_codes):
         return CandidateResult(

@@ -32,6 +32,9 @@ class BenchCase:
     reference: str
     origin_input_tokens: Optional[int] = None
     origin_output_tokens: Optional[int] = None
+    # outils declares (format evenement) quand l'origine a repondu par un appel d'outil (sortie
+    # JSON structuree, #24) : le candidat les recoit pour pouvoir repondre de la meme facon.
+    tools: tuple = ()
 
 
 @dataclass(frozen=True)

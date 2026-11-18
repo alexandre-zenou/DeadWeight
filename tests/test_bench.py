@@ -77,6 +77,46 @@ def test_real_dataset_mail_triage_builds_cases(dataset):
     assert all(c.reference for c in cases)
 
 
+# Sortie JSON structurée (#24) : n8n (Structured Output Parser) fait répondre le modèle par un
+# appel d'outil dont les arguments sont le JSON ; le texte de la réponse est alors vide.
+_FORMAT_TOOL = {'name': 'format_final_json_response', 'description': 'Format the final answer.',
+                'parameters': {'type': 'object', 'properties': {'output': {'type': 'object'}}}}
+
+
+def _json_tool_event(event_id, score, passes=True, last_role='user'):
+    event = _event(event_id, None)
+    event['request']['messages'] = [{'role': last_role, 'content': 'relis cette traduction'}]
+    event['request']['tools'] = [_FORMAT_TOOL]
+    args = json.dumps({'output': {'qualityScore': score, 'passesQuality': passes}})
+    event['response'] = {'content': None, 'tool_calls': [{'name': 'format_final_json_response',
+                                                          'arguments': args}]}
+    return event
+
+
+def test_build_test_cases_keeps_json_answer_given_through_tool_call():
+    cases = build_test_cases([_json_tool_event('e0', 9), _json_tool_event('e1', 10)], 'mail-triage', 'gpt-4o')
+    assert {c.event_id for c in cases} == {'e0', 'e1'}
+    assert all(c.tools == (_FORMAT_TOOL,) for c in cases)  # le candidat recevra le même outil
+    by_id = {c.event_id: c.reference for c in cases}
+    assert 'qualityscore=9' in by_id['e0'] and 'qualityscore=10' in by_id['e1']
+
+
+def test_build_test_cases_treats_empty_text_beside_a_tool_call_as_a_tool_answer():
+    event = _json_tool_event('e0', 9)
+    event['response']['content'] = ''
+    case = build_test_cases([event], 'mail-triage', 'gpt-4o')[0]
+    assert 'qualityscore=9' in case.reference and case.tools == (_FORMAT_TOOL,)
+
+
+def test_build_test_cases_still_skips_tool_calls_inside_an_agent_loop():
+    # après un résultat d'outil, l'appel d'outil continue un travail : ce n'est pas la réponse
+    assert build_test_cases([_json_tool_event('e0', 9, last_role='tool')], 'mail-triage', 'gpt-4o') == []
+
+
+def test_build_test_cases_plain_text_has_no_tools():
+    assert build_test_cases([_event('e0', 'spam')], 'mail-triage', 'gpt-4o')[0].tools == ()
+
+
 # --- scoring -------------------------------------------------------------------
 
 def test_detect_task_type_classification_on_few_distinct_outputs():
@@ -95,6 +135,24 @@ def test_score_case_classification_ignores_case_and_punctuation():
     assert score_case('classification', 'SPAM !', 'spam') == 1.0
     assert score_case('classification', 'facture', 'spam') == 0.0
     assert score_case('classification', None, 'spam') == 0.0
+
+
+def test_score_case_json_compares_flattened_fields_even_in_a_fence():
+    reference = '{"qualityScore": 9, "passesQuality": true}'
+    fenced = '```json\n{"passesQuality": true, "qualityScore": 9}\n```'
+    assert score_case('classification', fenced, reference) == 1.0
+    assert score_case('classification', '{"qualityScore": 10, "passesQuality": true}', reference) == 0.0
+    assert score_case('classification', '{"qualityScore": 9, "passesQuality": false}', reference) == 0.0
+
+
+def test_detect_task_type_counts_json_fields_not_their_layout():
+    # une seule réponse (a=1, b=true) écrite de 16 façons : ordre des clés, séparateurs, étiquette json
+    layouts = [prefix + json.dumps(obj, separators=seps)
+               for obj in ({'a': 1, 'b': True}, {'b': True, 'a': 1})
+               for seps in ((',', ':'), (', ', ': '), (',', ': '), (', ', ':'))
+               for prefix in ('', 'json ')]
+    events = [_event(f'e{i}', layout) for i, layout in enumerate(layouts)]
+    assert detect_task_type(build_test_cases(events, 'mail-triage', 'gpt-4o')) == 'classification'
 
 
 def test_score_case_text_uses_token_overlap_f1():
