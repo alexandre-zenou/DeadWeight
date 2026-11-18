@@ -47,6 +47,16 @@ La part des textes distincts (une voix par groupe de jumeaux) où les règles d'
 modèle d'origine.
 _Éviter_ : précision, taux de réussite
 
+**Stabilité** :
+La part des textes distincts où le modèle d'origine, à qui l'on redonne le même texte avec la même consigne,
+redonne la même réponse ; c'est la meilleure fidélité qu'un remplaçant puisse espérer.
+_Éviter_ : cohérence, reproductibilité
+
+**Seuil** :
+L'accord minimal qu'une preuve exige : la stabilité moins une marge, sans jamais dépasser 95 % ni descendre
+sous 80 % ; 95 % quand la stabilité n'est pas mesurée.
+_Éviter_ : précision cible
+
 **Verdict** :
 L'issue d'une preuve : prouvé (accord au-dessus du seuil), refusé (accord en dessous), ou non conclu (pas assez de
 textes distincts pour trancher, ce qui n'est pas un échec des règles).
