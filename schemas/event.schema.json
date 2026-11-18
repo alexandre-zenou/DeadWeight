@@ -35,7 +35,11 @@
           "description": "header = pose par le client (x-deadweight-trace) ; heuristic = deduit par la passerelle ; null = pas encore regroupe.",
           "enum": ["header", "heuristic", null]
         },
-        "step": { "type": ["integer", "null"], "minimum": 0 }
+        "step": { "type": ["integer", "null"], "minimum": 0 },
+        "status": {
+          "description": "Optionnel. Issue de l'execution entiere (import n8n) : error = l'execution a echoue, meme si cet appel LLM a reussi. Absent = inconnu (passerelle). Ne remplace pas error, qui reste l'erreur de l'appel lui-meme.",
+          "enum": ["success", "error", null]
+        }
       }
     },
     "app_id": {

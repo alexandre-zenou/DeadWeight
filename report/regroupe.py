@@ -20,6 +20,7 @@ COURT = {
     "oversized_model": "modèle trop gros", "excess_reasoning": "trop de raisonnement",
     "duplicate_calls": "appels en double", "unbounded_loop": "boucle", "no_cache": "pas de cache",
     "raw_context": "historique brut", "verbose_output": "réponses longues", "paid_errors": "échecs payés",
+    "failed_executions": "plantages payés",
 }
 
 # métrique propre à une règle : (libellé de colonne, valeur lue dans la preuve du constat)
@@ -82,7 +83,9 @@ def groupes(constats, total, tous_les_ids=None):
     mapping = parents(tous_les_ids or {c["app_id"] for c in constats})
     par_regle = defaultdict(list)
     for c in constats:
-        par_regle[c.get("regle") or c["titre"]].append({**c, "workflow": mapping[c["app_id"]]})
+        # un constat par workflow entier (failed_executions : « n8n:<workflow> ») n'est l'app_id d'aucun appel
+        workflow = mapping.get(c["app_id"]) or nom_workflow(c["app_id"])
+        par_regle[c.get("regle") or c["titre"]].append({**c, "workflow": workflow})
     out = []
     for regle, items in par_regle.items():
         par_wf = defaultdict(list)

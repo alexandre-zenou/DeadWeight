@@ -19,6 +19,10 @@ format_final_json_response et le modèle répond en l'appelant. Le nœud modèle
 (inputOverride.ai_outputParser[0][0].json.text). On les remet en tool_calls, comme la passerelle.
 
 L'identifiant d'exécution devient trace.id : le regroupement est exact, pas deviné.
+
+Le statut de l'exécution (success, error, crashed…) devient trace.status sur chacun de ses
+événements : un appel LLM réussi dans une exécution qui plante ensuite garde error = null (son
+appel à lui n'a pas échoué), mais trace.status = "error" dit que son résultat a été perdu.
 """
 from __future__ import annotations
 
@@ -109,6 +113,9 @@ def model_of(node: dict, options: dict) -> str | None:
     return None
 
 
+# statut d'exécution n8n → trace.status ; les autres (running, waiting, canceled…) restent inconnus
+EXECUTION_STATUS = {"success": "success", "error": "error", "crashed": "error"}
+
 FORMAT_TOOL = "format_final_json_response"  # outil de sortie structurée des agents n8n (LangChain)
 
 
@@ -143,6 +150,7 @@ class Stats:
         self.estimated_tokens = 0
         self.no_tokens = 0
         self.errors = 0
+        self.failed_executions = 0
         self.unknown_model = 0
         self.unknown_provider: set[str] = set()
         self.skipped: dict[str, int] = {}
@@ -154,6 +162,7 @@ class Stats:
         understood = self.real_tokens + self.estimated_tokens + self.errors
         return {
             "executions": self.executions,
+            "executions_en_erreur": self.failed_executions,
             "appels_llm_vus": self.llm_runs,
             "evenements": self.events,
             "jetons_reels": self.real_tokens,
@@ -169,6 +178,9 @@ class Stats:
 
 def convert_execution(wf: dict, ex: dict, stats: Stats) -> list[dict]:
     stats.executions += 1
+    status = EXECUTION_STATUS.get(ex.get("status"))
+    if status == "error":
+        stats.failed_executions += 1
     run_data = (((ex.get("data") or {}).get("resultData") or {}).get("runData")) or {}
     nodes = {n["name"]: n for n in wf.get("nodes", [])}
     tools = _tool_nodes(wf)
@@ -221,6 +233,8 @@ def convert_execution(wf: dict, ex: dict, stats: Stats) -> list[dict]:
     events.sort(key=lambda e: e["ts_start"])
     for step, ev in enumerate(events):
         ev["trace"] = {"id": f"n8n-{ex.get('id')}", "source": "header", "step": step}
+        if status:
+            ev["trace"]["status"] = status
     _attach_tool_calls(events, tool_runs)
     _attach_format_calls(events, format_runs)
     for ev in events:

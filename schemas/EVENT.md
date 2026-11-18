@@ -13,6 +13,9 @@ Régénérer : `python3 fixtures/gen_events.py`. Vérifier : `pytest tests/test_
   partout, et un test le vérifie.
 - Images : comptées (`n_images`), jamais stockées.
 - `trace` est `{id: null, source: null}` tant que D1.4 n'a pas regroupé l'appel.
+- `trace.status` (optionnel) : issue de l'exécution entière quand la source la connaît (import n8n :
+  `success` ou `error`). Un appel réussi dans une exécution qui plante ensuite garde `error: null` ;
+  c'est `trace.status = "error"` qui dit que son résultat a été perdu. Absent pour la passerelle.
 - `app_id` vient de l'en-tête `x-deadweight-app`, sinon `"default"`. Trace : `x-deadweight-trace`.
 - Arguments d'outils toujours en chaîne JSON (format OpenAI).
 
