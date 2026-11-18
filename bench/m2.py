@@ -75,6 +75,8 @@ def prove(events, finding, max_cases=DEFAULT_MAX_CASES, max_calls=None, min_inte
     out = {"finding_id": finding["finding_id"], "app_id": finding["app_id"], "model": finding["model"],
            "task_type": task_type, "threshold": threshold_for(task_type) if task_type else None,
            "n_cases": len(cases), "raison": rec["raison"],
+           # trafic court (#23) : options testées quand même, mais aucun coût mensuel à présenter comme mesuré
+           "projection_mensuelle": rec["projection_mensuelle"],
            "reference_cost_per_1000_calls_usd": reference, "options": {}}
     for key, option in options.items():
         result = run_candidate(candidate_for(key, option), cases, task_type,

@@ -168,7 +168,9 @@ def build_report(events, detectors=None, banc=None, billing=None, propositions=N
         if kind == "logs" and conseil_logs(f["rule"]):  # Claude Code : actions faisables dans Claude Code
             action = conseil_logs(f["rule"]).removeprefix("Quoi changer : ")
         # M2 : alternatives hors famille, seulement là où R2 a jugé la tâche simple
-        alternatives = recommend(evts)["options"] if f["rule"] == "oversized_model" and evts else None
+        rec = recommend(evts) if f["rule"] == "oversized_model" and evts else None
+        # garde du rapport : sur trafic court, pas d'alternatives chiffrées au mois (le banc, lui, les teste)
+        alternatives = (rec["options"] if rec["projection_mensuelle"] else {}) if rec else None
         tested = ((banc or {}).get(f["finding_id"]) or {}).get("options", {})
         if alternatives and tested:
             alternatives = {k: ({**o, "banc": tested[k]} if o and k in tested and tested[k]["model"] == o["modele"]

@@ -179,3 +179,20 @@ def test_report_says_inconclusive_bench_verdict_is_not_proven(events, finding):
     page = render_html(build_report(events, banc={FINDING: result}))
     assert "non conclu (trop peu de textes distincts)" in page
     assert "validé" not in page and "refusé" not in page
+
+
+def test_short_traffic_is_still_benched(events, finding):
+    """#23 (workflow 8) : 15 min de trafic, sous la fenêtre minimale : les options passent quand même au banc."""
+    from datetime import datetime, timedelta
+    t0 = datetime(2026, 11, 18, 9, 0, 0)
+    short = []
+    for i, e in enumerate(events):
+        t = t0 + timedelta(seconds=i * 900 / (len(events) - 1))
+        short.append({**e, "ts_start": t.isoformat() + "Z", "ts_end": (t + timedelta(milliseconds=500)).isoformat() + "Z"})
+    Client, seen = fake_client(answers(short, finding))
+    result = m2.prove(short, finding, max_cases=5, client_cls=Client)
+    assert result["raison"] is None and result["projection_mensuelle"] is False and seen
+    assert result["options"] and all(r["verdict"] == "pass" for r in result["options"].values())
+    assert result["reference_cost_per_1000_calls_usd"] > 0
+    assert all(r["cost_per_1000_calls_usd"] is not None for r in result["options"].values())
+    assert m2.dry_run(short, finding, max_cases=5)["options"]

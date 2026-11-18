@@ -16,16 +16,22 @@ Trois options :
 Modèle à raisonnement : il facture des jetons de réflexion que le trafic observé ne contient
 pas, donc son coût est sous-estimé ; l'option le signale (raisonnement: true).
 Sans indice de qualité (M1.2), rien n'est prouvé : la preuve est le rejeu (M2.2).
+
+Trafic plus court que MIN_WINDOW_SECONDS (une journée) : les options restent proposées, pour que le
+banc teste leur qualité, mais aucun coût mensuel n'est donné (projection non fiable,
+projection_mensuelle false) ; seul le coût pour 1 000 appels, indépendant de la fenêtre, l'est.
 """
 import copy
 
 from catalog import editor_index, editor_of, info, load_pricing, load_providers
 from catalog.capabilities import load as load_capabilities
-from report.cost import MIN_WINDOW_SECONDS, chiffrer, lookup, window_seconds
+from report.cost import MIN_WINDOW_SECONDS, MONTH_SECONDS, chiffrer, lookup, window_seconds
 from rules import oversized_model
 
 JSON_FORMATS = {"json_object", "json_schema"}
 ANY_HOST = "prix du moins cher des hébergeurs OpenRouter : l'hébergement dépend de la route choisie"
+SHORT_WINDOW = ("moins d'une journée de trafic observée : pas de projection mensuelle, "
+                "coûts donnés pour 1 000 appels")
 
 
 def needs(events):
@@ -59,6 +65,14 @@ def _cost_with(events, model, pricing):
     return chiffrer(swapped, pricing)["cout_mensuel_usd"]
 
 
+def _per_1000_calls(monthly, events):
+    """Coût mensuel projeté ramené à 1 000 appels réussis : ne dépend pas de la durée observée."""
+    calls = sum(e.get("error") is None for e in events)
+    if monthly is None or not calls:
+        return None
+    return monthly * window_seconds(events) / MONTH_SECONDS / calls * 1000
+
+
 def recommend(events, pricing=None, providers=None, capabilities=None):
     """Trois options pour un groupe d'appels au même modèle. Toujours « non prouvé »."""
     pricing = pricing if pricing is not None else load_pricing()
@@ -70,15 +84,15 @@ def recommend(events, pricing=None, providers=None, capabilities=None):
     current_price = lookup(pricing, current)
     need = needs(events)
     before = chiffrer(events, pricing)["cout_mensuel_usd"]
+    # même garde que la carte du rapport : sous une journée observée, aucun chiffre mensuel
+    projection = window_seconds(events) >= MIN_WINDOW_SECONDS
     result = {"modele": current, "editeur": current_editor, "appels": len(events),
-              "cout_mensuel_usd": before, "besoins": need, "options": {}, "prouve": False,
-              "raison": None}
+              "cout_mensuel_usd": before if projection else None,
+              "cout_1000_appels_usd": _per_1000_calls(before, events), "projection_mensuelle": projection,
+              "note": None if projection else SHORT_WINDOW,
+              "besoins": need, "options": {}, "prouve": False, "raison": None}
     if before is None:
         result["raison"] = "coût actuel non mesurable : pas de comparaison possible"
-        return result
-    if window_seconds(events) < MIN_WINDOW_SECONDS:  # même garde que la carte du rapport
-        result["cout_mensuel_usd"] = None
-        result["raison"] = "moins d'une heure de trafic observée : projection sur un mois non fiable"
         return result
     if need["contexte_min"] is None:
         result["raison"] = "jetons non capturés : taille de contexte nécessaire inconnue"
@@ -114,7 +128,9 @@ def recommend(events, pricing=None, providers=None, capabilities=None):
         else:
             host = None
             sheet.update(hebergement_ue=None, option_ue=ANY_HOST)
-        return {"modele": name, "cout_mensuel_usd": cost, "economie_usd": before - cost,
+        return {"modele": name, "cout_mensuel_usd": cost if projection else None,
+                "economie_usd": before - cost if projection else None,
+                "cout_1000_appels_usd": _per_1000_calls(cost, events),
                 "facteur": round(before / cost, 1) if cost > 0 else None, "hebergeur": host,
                 "raisonnement": capabilities[name]["raisonnement"],
                 **{k: sheet[k] for k in ("editeur", "pays", "hebergement_ue", "souverain", "option_ue")}}
