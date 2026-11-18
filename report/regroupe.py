@@ -20,7 +20,7 @@ COURT = {
     "oversized_model": "modèle trop gros", "excess_reasoning": "trop de raisonnement",
     "duplicate_calls": "appels en double", "unbounded_loop": "boucle", "no_cache": "pas de cache",
     "raw_context": "historique brut", "verbose_output": "réponses longues", "paid_errors": "échecs payés",
-    "failed_executions": "plantages payés",
+    "failed_executions": "plantages payés", "endless_memory": "mémoire sans fin",
 }
 
 # métrique propre à une règle : (libellé de colonne, valeur lue dans la preuve du constat)

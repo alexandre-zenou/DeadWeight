@@ -44,8 +44,13 @@ def test_dataset_produces_at_least_one_finding_per_rule():
     Pas de liste figee : une regle ajoutee dans rules/ (D2.4...) est couverte d'office."""
     # SILENT_ON_GATEWAY : la regle lit un champ que seule une autre source remplit (failed_executions :
     # trace.status, import n8n) ; elle se tait sur ce jeu passerelle par construction, testee ailleurs.
-    silent = [name for name, detect in _detectors() if not detect(EVENTS)
-              and not getattr(importlib.import_module(f"rules.{name}"), "SILENT_ON_GATEWAY", None)]
+    # SILENT_ON_DATASET : le jeu ne contient pas le motif et c'est voulu (endless_memory : aucune
+    # application n'y garde une memoire jamais videe ; la regle y verifie l'absence de faux positif).
+    def exempt(name):
+        mod = importlib.import_module(f"rules.{name}")
+        return getattr(mod, "SILENT_ON_GATEWAY", None) or getattr(mod, "SILENT_ON_DATASET", None)
+
+    silent = [name for name, detect in _detectors() if not detect(EVENTS) and not exempt(name)]
     assert not silent, f"regles sans aucun constat sur le jeu de donnees : {silent}"
 
 
