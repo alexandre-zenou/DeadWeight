@@ -1,6 +1,8 @@
 """Faux serveurs OpenAI-compatibles pour tester le banc sans reseau ni cle.
 
-    echo          : renvoie le dernier message utilisateur tel quel (le candidat "est d'accord")
+    echo          : renvoie le dernier message utilisateur tel quel (le candidat "est d'accord") ;
+                    si la requete declare des outils, le renvoie comme arguments d'un appel au
+                    premier outil (sortie JSON structuree, #24)
     fixed         : renvoie toujours le meme texte, different de la reference ("est en desaccord")
     error         : repond 500 a chaque appel
     unauthorized  : repond 401 a chaque appel (cle absente ou refusee, probleme 17)
@@ -30,8 +32,13 @@ class _Handler(BaseHTTPRequestHandler):
         else:  # echo
             content = next((m.get('content', '') for m in reversed(body.get('messages', []))
                            if m.get('role') == 'user'), '')
+        message = {'role': 'assistant', 'content': content}
+        if behavior == 'echo' and body.get('tools'):
+            name = body['tools'][0]['function']['name']
+            message = {'role': 'assistant', 'content': None, 'tool_calls': [
+                {'id': 'call_1', 'type': 'function', 'function': {'name': name, 'arguments': content}}]}
         self._send(200, {
-            'id': 'chatcmpl-fake', 'choices': [{'message': {'role': 'assistant', 'content': content}}],
+            'id': 'chatcmpl-fake', 'choices': [{'message': message}],
             'usage': {'prompt_tokens': 10, 'completion_tokens': 3},
         })
 

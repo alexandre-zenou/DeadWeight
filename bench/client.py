@@ -21,6 +21,7 @@ class CallResult(NamedTuple):
     input_tokens: Optional[int]
     output_tokens: Optional[int]
     error: Optional[str]
+    tool_calls: Optional[tuple] = None  # ({'name', 'arguments'}, ...) si le candidat a repondu par un outil
 
 
 class CandidateLLM:
@@ -36,12 +37,17 @@ class CandidateLLM:
         self.max_tokens = max_tokens
         self.extra = dict(extra) if extra else {}  # ex. {'reasoning_effort': 'low'} (bench.reasoning)
 
-    def complete(self, messages):
+    def complete(self, messages, tools=None):
         # temperature 0 pour des réponses stables ; les modèles à raisonnement (gpt-5, o-series)
         # la refusent (400) : on relance alors une fois sans.
         # getattr : un candidat construit sans passer par __init__ (tests/test_bench_runner.py,
         # __new__ + attributs choisis) n'a pas forcément .extra ; défaut vide, jamais une exception.
         extra = getattr(self, 'extra', None) or {}
+        if tools:  # outils au format evenement -> format OpenAI (sortie JSON structuree, #24)
+            extra = {**extra, 'tools': [
+                {'type': 'function', 'function': {k: v for k, v in t.items()
+                                                  if k in ('name', 'description', 'parameters') and v is not None}}
+                for t in tools]}
         result = self._call({'model': self.model, 'temperature': 0, 'messages': list(messages), **extra})
         if result.error == 'http_400':
             result = self._call({'model': self.model, 'messages': list(messages), **extra})
@@ -73,12 +79,15 @@ class CandidateLLM:
 
         latency_ms = self._elapsed_ms(t0)
         try:
-            content = payload['choices'][0]['message'].get('content')
+            message = payload['choices'][0]['message']
+            content = message.get('content')
+            tool_calls = tuple({'name': c['function']['name'], 'arguments': c['function'].get('arguments') or ''}
+                               for c in message.get('tool_calls') or ()) or None
         except (KeyError, IndexError, TypeError, AttributeError):
             return CallResult(None, latency_ms, None, None, 'malformed_response')
         usage = payload.get('usage') or {}
         return CallResult(content, latency_ms, usage.get('prompt_tokens'),
-                          usage.get('completion_tokens'), None)
+                          usage.get('completion_tokens'), None, tool_calls)
 
     @staticmethod
     def _elapsed_ms(t0):

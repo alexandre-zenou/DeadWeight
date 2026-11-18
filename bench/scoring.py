@@ -1,16 +1,19 @@
 """Detection du type de tache et score d'accord candidat / reference.
 
 Classification (peu de reponses distinctes, comme rules.low_entropy) : egalite
-stricte apres normalisation (rules.low_entropy.normalize), seuil 0.95 comme
-proof.replay. Texte libre : recouvrement de tokens (F1), simple, sans dependance
-et suffisant comme signal de premiere ligne. Un LLM-juge serait plus fin mais
-coute et bruite le banc lui-meme : point d'extension documente, pas implemente ici.
+stricte apres normalisation (rules.low_entropy.canon : normalize pour du texte ; pour
+un objet JSON, meme en bloc ```json, ses champs a plat, cles triees, valeurs en
+minuscules), seuil 0.95 comme proof.replay. Une note 9 contre 10 est donc un
+desaccord ; seuls les scores de confiance decimaux sont ignores, comme dans la regle.
+Texte libre : recouvrement de tokens (F1), simple, sans dependance et suffisant
+comme signal de premiere ligne. Un LLM-juge serait plus fin mais coute et bruite
+le banc lui-meme : point d'extension documente, pas implemente ici.
 """
 import re
 import unicodedata
 from collections import Counter
 
-from rules.low_entropy import MAX_DISTINCT, normalize
+from rules.low_entropy import MAX_DISTINCT, canon, output_of
 
 CLASSIFICATION_THRESHOLD = 0.95
 # Indicatif seulement, pas un seuil medical ni contractuel : voir README.
@@ -21,7 +24,7 @@ _WORD = re.compile(r"\w+", re.UNICODE)
 
 def detect_task_type(cases):
     """« classification » si les references n'ont que quelques valeurs distinctes."""
-    distinct = {normalize(c.reference) for c in cases if isinstance(c.reference, str)}
+    distinct = {canon(c.reference) for c in cases if isinstance(c.reference, str)}
     return 'classification' if 0 < len(distinct) <= MAX_DISTINCT else 'text'
 
 
@@ -45,10 +48,19 @@ def token_overlap_f1(a, b):
 
 
 def _label(text):
-    """Étiquette comparable : normalize (casse, espaces, ponctuation) puis sans accents.
+    """Étiquette comparable : canon (casse, espaces, ponctuation ; JSON à plat) puis sans accents.
     « Négatif » et « negatif » sont la même étiquette, comme « Spam. » et « spam »."""
-    decomposed = unicodedata.normalize('NFKD', normalize(text))
+    decomposed = unicodedata.normalize('NFKD', canon(text))
     return ''.join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def answer_of(case, result):
+    """Réponse comparable du candidat : son texte ; s'il a répondu par un appel d'outil,
+    la même étiquette que output_of donne à l'appel d'origine (bench.testset)."""
+    if not result.tool_calls:
+        return result.content
+    return output_of({'request': {'messages': list(case.messages)},
+                      'response': {'content': result.content, 'tool_calls': list(result.tool_calls)}})
 
 
 def score_case(task_type, got, reference):

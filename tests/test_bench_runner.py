@@ -77,6 +77,43 @@ def test_client_returns_content_latency_and_usage(echo_server):
     assert result.latency_ms >= 0 and result.input_tokens == 10 and result.output_tokens == 3
 
 
+_FORMAT_TOOL = {'name': 'format_final_json_response', 'description': 'Format the final answer.',
+                'parameters': {'type': 'object', 'properties': {'output': {'type': 'object'}}}}
+
+
+def _json_tool_cases(asked_score, reference_score, n=20):
+    """Le candidat echo renvoie le message utilisateur comme arguments de l'outil : il « note »
+    asked_score, l'origine avait noté reference_score."""
+    asked = json.dumps({'output': {'qualityScore': asked_score, 'passesQuality': True}})
+    reference = ('outil format_final_json_response '
+                 f'output.passesquality=true, output.qualityscore={reference_score}')
+    return [BenchCase(event_id=f'e{i}', messages=({'role': 'user', 'content': asked},),
+                      reference=reference, tools=(_FORMAT_TOOL,)) for i in range(n)]
+
+
+def test_client_sends_declared_tools_and_returns_the_tool_call(echo_server):
+    client = CandidateLLM(echo_server.base_url, None, 'x')
+    result = client.complete([{'role': 'user', 'content': '{"a": 1}'}], tools=(_FORMAT_TOOL,))
+    assert echo_server.received[-1]['tools'] == [{'type': 'function', 'function': _FORMAT_TOOL}]
+    assert result.error is None and result.content is None
+    assert result.tool_calls == ({'name': 'format_final_json_response', 'arguments': '{"a": 1}'},)
+
+
+def test_client_without_tools_sends_none(echo_server):
+    CandidateLLM(echo_server.base_url, None, 'x').complete([{'role': 'user', 'content': 'spam'}])
+    assert 'tools' not in echo_server.received[-1]
+
+
+def test_candidate_giving_the_same_json_through_the_tool_passes(echo_server):
+    result = run_candidate(_candidate(echo_server), _json_tool_cases(9, 9), 'classification')
+    assert result.verdict == 'pass' and result.score == 1.0
+
+
+def test_candidate_scoring_9_instead_of_10_disagrees(echo_server):
+    result = run_candidate(_candidate(echo_server), _json_tool_cases(9, 10), 'classification')
+    assert result.verdict == 'reject' and result.score == 0.0
+
+
 # --- run_candidate : accord ------------------------------------------------------
 
 def test_agreeing_candidate_passes_classification(echo_server):
