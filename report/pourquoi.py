@@ -52,17 +52,31 @@ def diagnostic(events):
 
 
 def lignes(d):
-    """Pourquoi rien : trois phrases (volume, invisible, suite)."""
-    out = [f"Volume : {_plural(d['nb_appels'], 'appel')} lus ({_plural(d['nb_sessions'], 'session')}) ; la tâche la plus "
-           f"répétée en compte {d['max_par_tache']}. Les règles de fréquence demandent {d['minimum']} appels par tâche "
-           "(DW_MIN_CALLS l'abaisse pour une démonstration)."]
+    """Pourquoi rien : trois phrases (volume, ce qui manque, suite). Volume atteint : pas de « suite » vers
+    plus de volume, les règles ont simplement tout lu sans rien trouver."""
+    volume_ok = d["max_par_tache"] >= d["minimum"]
+    lus = f"Volume : {_plural(d['nb_appels'], 'appel')} lus ({_plural(d['nb_sessions'], 'session')}) ; la tâche la plus " \
+          f"répétée en compte {d['max_par_tache']}"
+    if volume_ok:
+        out = [f"{lus}, les règles de fréquence en demandent {d['minimum']} : le volume suffit, "
+               "les règles n'ont rien trouvé à signaler dans ces appels."]
+    else:
+        out = [f"{lus}. Les règles de fréquence demandent {d['minimum']} appels par tâche "
+               "(DW_MIN_CALLS l'abaisse pour une démonstration)."]
     hidden = [name for name, seen in (("le prompt système", d["systeme_visible"]),
                                       ("la liste des outils", d["outils_visibles"])) if not seen]
-    if hidden:
+    if hidden and d["agent_code"]:
         out.append(f"Invisible dans cette source : {' et '.join(hidden)} (non écrits dans les journaux) ; "
                    "les règles qui s'appuient dessus (tâches répétitives, outils inutiles, cache de prompt) "
                    "ne peuvent pas se déclencher.")
-    if d["agent_code"]:
+    elif hidden:
+        out.append(f"Absents des requêtes : {' et '.join(hidden)} (l'application n'en envoie pas) ; "
+                   "les règles qui s'appuient dessus (tâches répétitives, outils inutiles, cache de prompt) "
+                   "n'ont rien à examiner.")
+    if volume_ok:
+        if d["agent_code"]:
+            out.append("La section Facturation du rapport dit si ces dollars sont payés ou une valeur équivalente API.")
+    elif d["agent_code"]:
         out.append("Pour atteindre le volume : lancez l'audit sur l'ensemble de vos projets "
                    "(`make audit-complet SOURCE=~/.claude/projects ALL=1`, soit `--all-projects`). "
                    "La section Facturation du rapport dit si ces dollars sont payés ou une valeur équivalente API.")
