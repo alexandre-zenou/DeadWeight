@@ -74,3 +74,40 @@ def test_low_entropy_title_singular():
         e["provider"], e["model"] = "openai", "gpt-4o"
     [f] = detect(events)
     assert "1 réponse différente :" in f["title"]
+
+
+def _gateway(n, system=None, tools=()):
+    events = [ev(i, app="mon-app", system=system, tools=tools) for i in range(n)]
+    for e in events:
+        e["trace"] = {"id": None, "source": "gateway", "step": None}
+        e["request"]["messages"] = [{"role": "user", "content": "même tâche"}]
+    return events
+
+
+def test_volume_reached_does_not_say_volume_is_missing():
+    text = "\n".join(lignes(diagnostic(_gateway(40))))
+    assert "la tâche la plus répétée en compte 40" in text
+    assert "le volume suffit" in text
+    assert "atteindre le volume" not in text and "laissez tourner" not in text
+
+
+def test_volume_missing_still_says_so():
+    text = "\n".join(lignes(diagnostic(_gateway(5))))
+    assert "le volume suffit" not in text and "atteindre le volume" in text
+
+
+def test_gateway_without_system_says_absent_from_requests():
+    text = "\n".join(lignes(diagnostic(_gateway(40))))
+    assert "non écrits dans les journaux" not in text and "Invisible" not in text
+    assert "Absents des requêtes : le prompt système et la liste des outils" in text and "n'en envoie pas" in text
+
+
+def test_gateway_with_system_but_no_tools_names_only_tools():
+    text = "\n".join(lignes(diagnostic(_gateway(5, system="sys"))))
+    assert "la liste des outils" in text and "prompt système" not in text
+
+
+def test_agent_logs_keep_invisible_text():
+    text = "\n".join(lignes(diagnostic([ev(i) for i in range(5)])))
+    assert ("Invisible dans cette source : le prompt système et la liste des outils "
+            "(non écrits dans les journaux)") in text
