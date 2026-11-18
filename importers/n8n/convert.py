@@ -13,6 +13,11 @@ Le prompt est aplati par LangChain (« System: …\\nHuman: …\\nAI: … »), o
 Les appels d'outils du modèle ne sont pas gardés par n8n : on les reconstitue depuis les
 exécutions des nœuds outils branchés en ai_tool sur le même nœud racine.
 
+Sortie structurée (agent + « Structured Output Parser ») : l'agent donne au modèle l'outil
+format_final_json_response et le modèle répond en l'appelant. Le nœud modèle n'en garde rien
+(texte vide, finish_reason = tool_calls) ; les arguments de l'appel sont l'entrée du nœud parser
+(inputOverride.ai_outputParser[0][0].json.text). On les remet en tool_calls, comme la passerelle.
+
 L'identifiant d'exécution devient trace.id : le regroupement est exact, pas deviné.
 """
 from __future__ import annotations
@@ -104,14 +109,27 @@ def model_of(node: dict, options: dict) -> str | None:
     return None
 
 
-def _tool_nodes(wf: dict) -> dict[str, str]:
-    """nœud outil → nœud racine qui l'utilise (connexions ai_tool)."""
+FORMAT_TOOL = "format_final_json_response"  # outil de sortie structurée des agents n8n (LangChain)
+
+
+def _sub_nodes(wf: dict, kind: str) -> dict[str, str]:
+    """sous-nœud → nœud racine qui l'utilise (connexions ai_tool, ai_outputParser…)."""
     out = {}
     for src, conns in (wf.get("connections") or {}).items():
-        for branch in conns.get("ai_tool", []) or []:
+        for branch in conns.get(kind, []) or []:
             for c in branch or []:
                 out[src] = c.get("node")
     return out
+
+
+def _tool_nodes(wf: dict) -> dict[str, str]:
+    return _sub_nodes(wf, "ai_tool")
+
+
+def _structured_roots(wf: dict, nodes: dict[str, dict]) -> set[str]:
+    """Agents branchés à un parser de sortie : ils proposent format_final_json_response au modèle."""
+    return {root for root in _sub_nodes(wf, "ai_outputParser").values()
+            if _short((nodes.get(root) or {}).get("type", "")).startswith("agent")}
 
 
 class Stats:
@@ -164,6 +182,19 @@ def convert_execution(wf: dict, ex: dict, stats: Stats) -> list[dict]:
             tool_runs.setdefault(root, []).append((run.get("startTime") or 0, {
                 "id": None, "name": name, "arguments": json.dumps(args.get("query", args), ensure_ascii=False)}))
 
+    # entrées des parsers de sortie des agents : les arguments de format_final_json_response
+    structured = _structured_roots(wf, nodes)
+    format_runs: dict[str, list[tuple[float, dict]]] = {}
+    for name, root in _sub_nodes(wf, "ai_outputParser").items():
+        if root not in structured:
+            continue
+        for run in run_data.get(name, []):
+            text = _first_json(run.get("inputOverride"), "ai_outputParser").get("text")
+            if run.get("error") or not _is_json(text):
+                continue  # le modèle a répondu en texte : déjà dans response.content
+            format_runs.setdefault(root, []).append((run.get("startTime") or 0, {
+                "id": None, "name": FORMAT_TOOL, "arguments": text}))
+
     events = []
     for name, runs in run_data.items():
         node = nodes.get(name)
@@ -183,12 +214,15 @@ def convert_execution(wf: dict, ex: dict, stats: Stats) -> list[dict]:
             ev["_root"] = root
             ev["request"]["tools"] = [{"name": t, "description": None, "parameters": None}
                                       for t, r in tools.items() if r == root]
+            if root in structured:
+                ev["request"]["tools"].append({"name": FORMAT_TOOL, "description": None, "parameters": None})
             events.append(ev)
 
     events.sort(key=lambda e: e["ts_start"])
     for step, ev in enumerate(events):
         ev["trace"] = {"id": f"n8n-{ex.get('id')}", "source": "header", "step": step}
     _attach_tool_calls(events, tool_runs)
+    _attach_format_calls(events, format_runs)
     for ev in events:
         del ev["_root"]
     stats.events += len(events)
@@ -208,6 +242,48 @@ def _attach_tool_calls(events: list[dict], tool_runs: dict[str, list[tuple[float
                 owner["response"]["tool_calls"].append(call)
                 if owner["response"]["finish_reason"] in (None, "stop", "other"):
                     owner["response"]["finish_reason"] = "tool_calls"
+
+
+def _attach_format_calls(events: list[dict], format_runs: dict[str, list[tuple[float, dict]]]):
+    """Le parser s'exécute juste après l'appel LLM qui a rendu la sortie structurée (le dernier
+    appel du même nœud racine fini avant lui), et seulement si cet appel a demandé un outil."""
+    for root, runs in format_runs.items():
+        calls = [e for e in events if e["_root"] == root]
+        for start, call in sorted(runs, key=lambda r: r[0]):
+            owner = None
+            for e in calls:
+                if _ms(e["ts_end"]) <= start + 1:
+                    owner = e
+            if owner is None or owner["response"]["finish_reason"] != "tool_calls":
+                continue
+            if any(c["name"] == FORMAT_TOOL for c in owner["response"]["tool_calls"]):
+                continue
+            owner["response"]["tool_calls"].append(call)
+
+
+def _is_json(text) -> bool:
+    if not isinstance(text, str):
+        return False
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _message_tool_calls(generation: dict) -> list[dict]:
+    """tool_calls du message LangChain sérialisé (AIMessage), quand n8n l'a gardé."""
+    msg = generation.get("message")
+    if not isinstance(msg, dict):
+        return []
+    kwargs = msg.get("kwargs") if isinstance(msg.get("kwargs"), dict) else msg
+    out = []
+    for c in kwargs.get("tool_calls") or []:
+        if isinstance(c, dict) and isinstance(c.get("name"), str):
+            args = c.get("args")
+            out.append({"id": c.get("id") if isinstance(c.get("id"), str) else None, "name": c["name"],
+                        "arguments": args if isinstance(args, str) else json.dumps(args or {}, ensure_ascii=False)})
+    return out
 
 
 def _ms(iso: str) -> float:
@@ -311,7 +387,7 @@ def _from_model_node(node: dict, run: dict, stats: Stats) -> dict | None:
 
     ev = _base(node, run, stats, model_of(node, options), options)
     ev["request"] = {"system": system, "messages": messages, "tools": [], "params": _params(options)}
-    ev["response"] = {"content": first.get("text"), "tool_calls": [],
+    ev["response"] = {"content": first.get("text"), "tool_calls": _message_tool_calls(first),
                       "finish_reason": "error" if run.get("error") else FINISH.get(raw, "other" if raw else None),
                       "finish_reason_raw": raw}
     ev["usage"] = _usage(out, stats, failed=bool(run.get("error")))
