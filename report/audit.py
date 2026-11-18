@@ -96,6 +96,9 @@ RULE_TEXT = {
                        "Mettre en cache la réponse plutôt que de rappeler le modèle."),
     "paid_errors": ("Des échecs facturés puis payés une seconde fois en relance",
                     "Corriger la cause de l'échec (limite de longueur, filtre) avant de relancer."),
+    "failed_executions": ("Des exécutions qui plantent après avoir payé leurs appels",
+                          "Corriger la cause du plantage, ou le faire arriver avant les appels d'IA "
+                          "(vérifier les entrées d'abord, borner la boucle qui casse)."),
     "verbose_output": ("Des réponses bien plus longues que nécessaire",
                        "Poser un plafond de longueur raisonnable, à vérifier par rejeu."),
     "data_outside_eu": ("Des données qui partent hors d'Europe",

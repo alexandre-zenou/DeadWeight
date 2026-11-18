@@ -42,7 +42,10 @@ FINDINGS = _all_findings()
 def test_dataset_produces_at_least_one_finding_per_rule():
     """Garde-fou : si le dataset ne declenche plus une regle, le test suivant passerait a vide.
     Pas de liste figee : une regle ajoutee dans rules/ (D2.4...) est couverte d'office."""
-    silent = [name for name, detect in _detectors() if not detect(EVENTS)]
+    # SILENT_ON_GATEWAY : la regle lit un champ que seule une autre source remplit (failed_executions :
+    # trace.status, import n8n) ; elle se tait sur ce jeu passerelle par construction, testee ailleurs.
+    silent = [name for name, detect in _detectors() if not detect(EVENTS)
+              and not getattr(importlib.import_module(f"rules.{name}"), "SILENT_ON_GATEWAY", None)]
     assert not silent, f"regles sans aucun constat sur le jeu de donnees : {silent}"
 
 
