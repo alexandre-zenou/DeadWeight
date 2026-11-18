@@ -16,6 +16,13 @@ Une étape LLM dans une boucle sur les lignes d'un tableau.
 ## Comment le détecter
 Graphe n8n (nœud LLM dans une boucle) ou rafales d'appels du même gabarit.
 
+R11 voit deux formes :
+- une rafale d'au moins 8 éléments courts (sortie ≤ 64 jetons, sans outil) ;
+- dans une même exécution (trace explicite : en-tête client ou exécution n8n), la même consigne appelée au moins
+  3 fois sur des entrées distinctes, sortie structurée acceptée (note + commentaire par outil ou JSON, ≤ 256 jetons),
+  sur au moins 3 exécutions. Exemple : 4 relectures par texte, une par langue. Une consigne dont un appel porte un
+  historique (boucle d'agent, conversation) est écartée.
+
 ## Ce qu'on propose au client
 Regrouper les éléments dans un seul appel structuré, ou l'API batch.
 
