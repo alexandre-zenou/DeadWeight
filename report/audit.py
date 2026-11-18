@@ -103,6 +103,9 @@ RULE_TEXT = {
                        "Poser un plafond de longueur raisonnable, à vérifier par rejeu."),
     "data_outside_eu": ("Des données qui partent hors d'Europe",
                         "Passer par la région UE du fournisseur, ou tester un modèle européen au banc."),
+    "endless_memory": ("Une mémoire de conversation qui ne se vide jamais",
+                       "Borner la mémoire (fenêtre glissante des derniers échanges ou résumé) et vérifier la "
+                       "clé de session : une clé fixe fait partager la même conversation à tous les utilisateurs."),
     "context_reread": ("Chaque appel relit (presque) toute la conversation",
                        "Raccourcir les sessions ou activer une compaction, alléger le contexte de démarrage, "
                        "et partager un même préfixe entre agents pour que le cache serve à tous."),

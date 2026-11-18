@@ -50,6 +50,10 @@ def conseil_proposition(proposal, kind):
 
 # constats sans levier rejouable : (pourquoi, ce qui les rendrait testables)
 NON_REJOUABLE = {
+    "endless_memory": ("la mémoire qui grossit vient de la façon dont le workflow garde l'historique, pas d'un "
+                       "appel remplaçable",
+                       "rejouer les mêmes échanges avec une mémoire bornée, ce que l'audit ne fait pas : "
+                       "bornez la mémoire puis comparez avec la période suivante"),
     "context_reread": ("la relecture du contexte vient de la longueur des sessions, pas d'un appel remplaçable",
                        "rejouer les mêmes sessions avec un contexte compacté, ce que l'audit ne fait pas : "
                        "appliquez le changement puis comparez avec la période suivante"),
