@@ -116,6 +116,19 @@ def _model(finding, events, keys_available, prove):
                 "verdict": "non_teste", "raisons": ["aucune clé pour le banc : rien de mesuré"],
                 "mesures": {"precision": _m(None, NON_TESTE, "%")}}
     result = prove(events, finding)
+    tested = [o for o in result["options"].values() if o.get("verdict") != "not_tested"]
+    if not tested:
+        # le banc n'a mesuré aucun candidat (trafic trop court, aucune option, appels tous en échec…) :
+        # ce n'est pas un refus de qualité ; la raison du banc est reprise telle quelle (#22).
+        why = ([result["raison"]] if result.get("raison")
+               else [r for o in result["options"].values() for r in o.get("reasons") or []])
+        return {"type": "modele", "finding_id": finding["finding_id"], "app_id": finding["app_id"],
+                "model": finding["model"], "changement": f"Tester un modèle plus petit que {finding['model']}.",
+                "nouveau_modele": None, "verdict": "non_teste",
+                "raisons": why or ["le banc n'a testé aucun modèle : rien de mesuré"], "preuve": result,
+                "mesures": {k: _m(None, NON_TESTE, u) for k, u in
+                            (("precision", "%"), ("appels_rejoues", ""), ("latence_p95", "%"), ("cout", "%"))},
+                "cout_usd": None}
     ranked = sorted((o for o in result["options"].values() if o.get("verdict") == "pass"),
                     key=lambda o: o.get("cost_per_1000_calls_usd") or float("inf"))
     best = ranked[0] if ranked else None
