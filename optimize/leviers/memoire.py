@@ -15,7 +15,9 @@ def memory_proposal(finding, events, keys_available, prove_memory=None):
         from bench.memory import prove as prove_memory
     from bench.memory import DEFAULT_WINDOW
     head = {"type": "memoire", "finding_id": finding["finding_id"], "app_id": finding["app_id"],
-            "model": finding["model"]}
+            "model": finding["model"],
+            # #45 : prévision de plantage de la règle, affichée telle quelle, jamais une mesure ni un gain
+            "prevision": (finding.get("evidence") or {}).get("forecast")}
     if not keys_available:
         return {**head, "fenetre": DEFAULT_WINDOW,
                 "changement": f"Borner la mémoire de conversation aux {DEFAULT_WINDOW} derniers échanges.",

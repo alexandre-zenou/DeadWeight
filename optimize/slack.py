@@ -9,6 +9,7 @@ Sur abonnement (Claude Code Max, ChatGPT Plus…), le forfait ne baisse pas : le
 
 
 from report.conseils import conseil_logs, conseil_proposition
+from report.prevision import texte
 
 LEVELS = {"precision"}  # un niveau, pas une variation : jamais de signe
 TOTAL = {False: "de la dépense totale", True: "de la valeur consommée (équiv. API)"}
@@ -84,7 +85,9 @@ def _line(p, link, total_spent=None, equivalent_api=False, kind=None):
     how = (conseil_proposition(p, kind) or quoi_changer(p)) if p["verdict"] == "pass" else None
     if how and kind == "logs" and not conseil_proposition(p, kind) and p["type"] in ("plafond", "cache_prompt"):
         how = None  # réglage SDK sans équivalent dans Claude Code : mieux vaut ne rien dire que mal conseiller
-    return f"{icon} *{p['app_id']}* — {p['changement']}\n      {detail}{share}{why}{pr}" + (f"\n      {how}" if how else "")
+    prevision = texte(p.get("prevision"))  # #45 : dite comme une prévision, jamais dans un total
+    return (f"{icon} *{p['app_id']}* — {p['changement']}\n      {detail}{share}{why}{pr}"
+            + (f"\n      {prevision}" if prevision else "") + (f"\n      {how}" if how else ""))
 
 
 TOP_PROBLEMES = 3  # problèmes détaillés dans le message ; les autres tiennent en une ligne

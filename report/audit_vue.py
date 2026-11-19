@@ -7,6 +7,7 @@ import html
 import re
 
 from report.fmt import ms, usd, verdict
+from report.prevision import html_constats
 from report.regroupe import actions, groupes, nom_workflow, par_workflow
 
 TOP_TABLE = 5       # workflows montrés par carte de problème
@@ -128,7 +129,8 @@ def groupe_html(g, alternatives, global_reasons, shared_reason):
     alt = "".join(alternatives(c) for c in g["constats"] if c.get("alternatives"))
     return f"""<div class="card"><div class="head"><h3>{e(g['titre'])}</h3>
 <span class="note">{n} workflow{'s' if n > 1 else ''} · {_pct(g['part'])} du coût</span></div>
-{phrase}{_table(rows[:TOP_TABLE], metric)}{more}
+{phrase}{html_constats(g['constats'], nom_workflow if len(g['constats']) > 1 else None)}
+{_table(rows[:TOP_TABLE], metric)}{more}
 <p class="todo"><b>Que faire :</b> {_txt(g['action'].removeprefix('Quoi changer : '))}</p>
 {alt}{_notes(g['constats'], global_reasons, shared_reason)}</div>"""
 
