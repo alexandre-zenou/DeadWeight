@@ -3,6 +3,8 @@ le statut de chaque chiffre, les raisons d'un refus ou d'une preuve non conclue 
 Slack ne montre que les gains prouvés ; ici, rien n'est caché."""
 import html
 
+from report.prevision import texte
+
 # « non conclu » (ADR 0002) : trop peu de textes distincts pour trancher ; pas prouvé, pas refusé non plus.
 VERDICT = {"pass": ("Prouvée", "ok"), "reject": ("Refusée", "ko"), "inconclusive": ("Non conclue", "na"),
            "non_teste": ("Non testée", "na")}
@@ -65,10 +67,11 @@ def render(proposals, diffs=None):
         label, cls = VERDICT.get(p["verdict"], (p["verdict"], "na"))
         rows = "".join(_row(k, m) for k, m in p["mesures"].items())
         why = "".join(f"<li>{e(r)}</li>" for r in p.get("raisons") or [])
+        prevision = texte(p.get("prevision"))
         diff = f"<details><summary>Micro-PR préparée</summary><pre>{e(diffs[i])}</pre></details>" if i in diffs else ""
         cards.append(f"""<div class="card"><span class="tag {cls}">{label}</span>
 <b> {e(p['app_id'])}</b> <span class="mute">· {e(p['type'])} · {e(p.get('model') or '')}</span>
-<p>{e(p['changement'])}</p>{f'<ul class="{cls}">{why}</ul>' if why else ''}{_proof_notes(p.get('preuve') or {})}
+<p>{e(p['changement'])}</p>{f'<p class="na">{e(prevision)}</p>' if prevision else ''}{f'<ul class="{cls}">{why}</ul>' if why else ''}{_proof_notes(p.get('preuve') or {})}
 <table><tr><th>Mesure</th><th>Valeur</th><th>Statut</th><th>Hypothèse</th></tr>{rows}</table>{diff}</div>""")
     return f"""<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Propositions Deadweight</title>

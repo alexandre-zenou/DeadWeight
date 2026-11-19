@@ -20,6 +20,7 @@ from catalog.recommend import recommend
 from report.billing import ABONNEMENT, billing_section, load_billing, spent_usd
 from report.pourquoi import diagnostic, lignes, utile
 from report.conseils import conseil_logs
+from report.prevision import html_constats
 from report import audit_vue
 from report.regroupe import nom_workflow, parents
 from report.fmt import ms as _ms, usd as _usd, verdict as _verdict
@@ -407,7 +408,7 @@ def _card(c, global_reasons=()):
         notes.append("Chiffre manquant : " + "; ".join(own) + ".")
     return f"""<div class="card"><h3>{e(c['titre'])}</h3>
 <div class="app">Application {e(c['app_id'])} · modèle {e(c['model'])}</div>
-<p>{e(c['phrase'])}</p>
+<p>{e(c['phrase'])}</p>{html_constats([c])}
 <div class="nums"><span>{_cost_label(n)[0]} <b>{_usd(_cost_label(n)[1])}</b></span>
 <span>Latence médiane <b>{_ms(n['latence_mediane_ms'])}</b></span>
 <span>Latence p95 <b>{_ms(n['latence_p95_ms'])}</b></span>
